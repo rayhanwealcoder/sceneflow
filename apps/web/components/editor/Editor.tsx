@@ -10,6 +10,7 @@ import { useEditor } from "@/lib/editorStore";
 import { usePlayhead } from "@/lib/playhead";
 import { useSession } from "@/lib/session";
 import type { BrandKitRow } from "@/lib/types";
+import { AiPanel } from "./AiPanel";
 import { Canvas } from "./Canvas";
 import { Inspector } from "./Inspector";
 import { SavePresetDialog } from "./SavePresetDialog";
@@ -36,6 +37,7 @@ function tourSteps(project: Project): TourStep[] {
     { target: "elements", title: "Add elements", body: "Text, buttons, images, hotspots, a product card… click one and it lands on the canvas with sensible defaults.", placement: "right" },
     { target: "presets", title: "Ready-made pieces", body: "Starter presets drop in a headline, a call to action, a lower third or a whole scene. Save your own with ★ in the right panel and reuse them in every video.", placement: "right" },
     { target: "inspector", title: "Everything about the selected element lives here", body: "Content, style, position, motion and what happens on click. Nothing is hidden in menus.", placement: "left" },
+    { target: "ai", title: "Let AI draft it", body: "Describe the video and get a script with scenes, better copy for any element, a voiceover per scene and captions. Everything it makes is normal content you can edit — Ctrl+Z undoes any step.", placement: "bottom" },
   ];
   if (hasProduct) steps.push({ target: "inspector", title: "Pick your product", body: "Select the product card on the canvas, then “Choose a product”. With WooCommerce connected you get live prices and real add-to-cart; otherwise add a product with a link.", placement: "left" });
   steps.push(
@@ -171,7 +173,7 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || tourIndex !== null) return;
+      if (isTypingTarget(e.target) || tourIndex !== null || useEditor.getState().ai.open) return;
       const s = useEditor.getState();
       const ph = usePlayhead.getState();
       const mod = e.ctrlKey || e.metaKey;
@@ -236,7 +238,7 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
 
   return (
     <div className="ed">
-      <TopBar projectId={projectId} projectName={projectName} onPublish={() => void publish()} publishing={publishing} onPreviewSite={siteId ? () => void previewOnSite() : undefined} sizeKb={sizeKb} sizeWarnKb={SIZE_WARN_KB} onTour={() => setTourIndex(0)} onSaveTemplate={() => setSaveTemplate(presetFromProject(useEditor.getState().project))} onApplyBrand={applyBrand} />
+      <TopBar projectId={projectId} projectName={projectName} onPublish={() => void publish()} publishing={publishing} onPreviewSite={siteId ? () => void previewOnSite() : undefined} sizeKb={sizeKb} sizeWarnKb={SIZE_WARN_KB} onTour={() => setTourIndex(0)} onSaveTemplate={() => setSaveTemplate(presetFromProject(useEditor.getState().project))} onApplyBrand={applyBrand} onAi={() => store.openAi()} />
       {notice && (
         <div className="ed-notice" onClick={() => setNotice(null)}>
           {notice}
@@ -262,6 +264,7 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
         <Inspector workspaceId={workspaceId} projectId={projectId} />
       </div>
       {tourIndex !== null && <Tour steps={steps} index={tourIndex} onIndex={setTourIndex} onClose={closeTour} />}
+      {store.ai.open && <AiPanel projectId={projectId} workspaceId={workspaceId} onNotice={setNotice} />}
       {saveTemplate && <SavePresetDialog workspaceId={workspaceId} config={saveTemplate} defaultName={projectName} onSaved={(p) => { store.upsertLibrary(p); setNotice(`Template “${p.name}” saved. It appears under “Your templates” when you make a new video.`); }} onClose={() => setSaveTemplate(null)} />}
     </div>
   );

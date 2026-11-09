@@ -65,6 +65,11 @@ export class S3StorageProvider implements StorageProvider {
     return { url, method: "PUT", headers: { "content-type": args.mimeType }, expiresAt: Math.floor(Date.now() / 1000) + expiresIn };
   }
 
+  async putOriginal(key: string, body: Buffer, contentType: string): Promise<number> {
+    await this.client.send(new PutObjectCommand({ Bucket: this.opts.bucket, Key: this.originalKey(key), Body: body, ContentType: contentType, ContentLength: body.length }));
+    return body.length;
+  }
+
   async statOriginal(key: string): Promise<number | null> {
     try {
       const head = await this.client.send(new HeadObjectCommand({ Bucket: this.opts.bucket, Key: this.originalKey(key) }));

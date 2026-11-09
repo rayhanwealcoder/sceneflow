@@ -1,6 +1,20 @@
 import type { BrandKit, Preset } from "@sceneflow/schema";
 
-export type { BrandKit, Preset, PresetConfig, PresetInput, PresetScope, PresetType, Product, ProductRef, ProductVariant } from "@sceneflow/schema";
+export type { AiScript, AiScriptScene, AiCopyKind, AiTone, BrandKit, CaptionCue, Captions, Preset, PresetConfig, PresetInput, PresetScope, PresetType, Product, ProductRef, ProductVariant } from "@sceneflow/schema";
+
+/** `GET /api/v1/ai/status`: which AI helpers this server can offer. */
+export interface AiVoice {
+  id: string;
+  name: string;
+  language?: string;
+  gender?: string;
+}
+export interface AiStatus {
+  text: { provider: string; label: string; real: boolean };
+  speech: { provider: string; label: string; voices: AiVoice[] } | null;
+  transcription: { provider: string; label: string } | null;
+  hints: string[];
+}
 
 /** A preset stored in the cloud library (personal or workspace scope). */
 export interface LibraryPreset extends Preset {

@@ -18,6 +18,7 @@ export function TopBar({
   onTour,
   onSaveTemplate,
   onApplyBrand,
+  onAi,
 }: {
   projectId: string;
   projectName: string;
@@ -29,6 +30,7 @@ export function TopBar({
   onTour?: () => void;
   onSaveTemplate?: () => void;
   onApplyBrand?: () => void;
+  onAi?: () => void;
 }) {
   const { history, undo, redo, device, setDevice, mode, setMode, saveState, savedVersion, showSafeArea, toggleSafeArea, brandKit } = useEditor();
   const heavy = sizeKb !== undefined && sizeWarnKb !== undefined && sizeKb > sizeWarnKb;
@@ -79,6 +81,11 @@ export function TopBar({
       )}
 
       <div className="row" style={{ marginLeft: "auto", gap: 8 }}>
+        {onAi && (
+          <button className="btn sm ai-btn" onClick={onAi} title="Script, copy, voiceover and captions" data-tour="ai" data-testid="ai-open">
+            ✨ AI
+          </button>
+        )}
         {onTour && (
           <button className="btn sm" onClick={onTour} title="Show the guided tour again">
             Tour

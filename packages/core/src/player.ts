@@ -1,4 +1,4 @@
-import { aspectRatioValue, deviceFromWidth, isLayerVisibleAt, parseProject, sceneAt, type Action, type Device, type Layer, type Product, type ProductRef, type Project, type Scene, type VideoSource } from "@sceneflow/schema";
+import { aspectRatioValue, cueAt, deviceFromWidth, isLayerVisibleAt, parseProject, sceneAt, type Action, type CaptionCue, type Device, type Layer, type Product, type ProductRef, type Project, type Scene, type VideoSource } from "@sceneflow/schema";
 import { commerce, linkAdapter, type CartLine, type CommerceAdapter, type CommerceResult } from "./commerce.js";
 import { Emitter, type EventMap } from "./emitter.js";
 import { Analytics, analyticsAllowed } from "./analytics.js";
@@ -79,6 +79,11 @@ export class Player {
   private analytics: Analytics | null = null;
   private quartilesSeen = new Set<number>();
   private impressed = new Set<string>();
+  // captions
+  private captionsEl: HTMLElement | null = null;
+  private captionsRo: ResizeObserver | null = null;
+  private cueShown: CaptionCue | null = null;
+  private captionsOn = true;
 
   constructor(private readonly options: PlayerOptions) {}
 
@@ -183,6 +188,7 @@ export class Player {
     this.mediaEl = mediaEl;
 
     this.stage = new Stage(playerEl, { device: this.options.device ?? "auto", onAction: (a, l) => void this.handleAction(a, l) });
+    this.mountCaptions(project, playerEl);
 
     // Poster first: cheap paint before any media loads.
     const first = project.scenes[0] ?? null;
@@ -191,6 +197,7 @@ export class Player {
     else if (first) this.renderSceneBackground(first, false);
     if (first) {
       this.stage.render(project, first.id, 0);
+      this.renderCaption(0);
       this.hydrateScene(first);
       this.prefetchAdjacent(first);
       this.sceneAnalytics(null, first, 0);
@@ -210,6 +217,83 @@ export class Player {
       playerEl.addEventListener("mouseenter", () => this.play());
       playerEl.addEventListener("mouseleave", () => this.pause());
     }
+  }
+
+  // ---------- captions ----------
+
+  private static readonly CC_KEY = "sf_cc";
+
+  /** Subtitle bar + CC toggle, only when the project has cues and does not turn them off. */
+  private mountCaptions(project: Project, playerEl: HTMLElement): void {
+    const caps = project.captions;
+    if (!caps?.cues.length || project.playback.captions === false) return;
+    let pref: string | null = null;
+    try {
+      pref = localStorage.getItem(Player.CC_KEY);
+    } catch {
+      /* storage blocked */
+    }
+    this.captionsOn = pref !== "off";
+    const el = document.createElement("div");
+    el.className = "sf-captions";
+    el.setAttribute("aria-live", "polite");
+    el.dataset.sfPos = caps.style.position;
+    el.dataset.sfSize = caps.style.size;
+    if (this.mode === "base" && project.playback.controls && this.effective !== "scroll") el.dataset.sfControls = "1";
+    el.lang = caps.language;
+    playerEl.appendChild(el);
+    this.captionsEl = el;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sf-cc";
+    btn.textContent = "CC";
+    btn.setAttribute("aria-label", "Toggle captions");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.setCaptionsEnabled(!this.captionsOn);
+    });
+    playerEl.appendChild(btn);
+    playerEl.dataset.sfCc = this.captionsOn ? "on" : "off";
+    btn.setAttribute("aria-pressed", String(this.captionsOn));
+    // Captions scale with the player like layers do (same reference width as the stage).
+    const scale = (w: number) => el.style.setProperty("--sf-scale", String(Math.max(0.35, w / REF_WIDTH)));
+    scale(playerEl.clientWidth || REF_WIDTH);
+    if (typeof ResizeObserver !== "undefined") {
+      this.captionsRo = new ResizeObserver((entries) => {
+        const w = entries[0]?.contentRect.width ?? 0;
+        if (w) scale(w);
+      });
+      this.captionsRo.observe(playerEl);
+    }
+  }
+
+  private renderCaption(t: number): void {
+    const el = this.captionsEl;
+    const cues = this.project?.captions?.cues;
+    if (!el || !cues) return;
+    const cue = cueAt(cues, t);
+    if (cue === this.cueShown) return;
+    this.cueShown = cue;
+    el.textContent = cue ? cue.text : "";
+  }
+
+  /** Visitor preference for subtitles; remembered per browser. */
+  setCaptionsEnabled(on: boolean): void {
+    this.captionsOn = on;
+    if (this.playerEl) {
+      this.playerEl.dataset.sfCc = on ? "on" : "off";
+      this.playerEl.querySelector(".sf-cc")?.setAttribute("aria-pressed", String(on));
+    }
+    try {
+      localStorage.setItem(Player.CC_KEY, on ? "on" : "off");
+    } catch {
+      /* storage blocked */
+    }
+    this.emitter.emit("captionsChange", { enabled: on });
+  }
+
+  getCaptionsEnabled(): boolean {
+    return this.captionsOn;
   }
 
   private showPoster(src: string | undefined): void {
@@ -509,6 +593,8 @@ export class Player {
     this.blobUrl = null;
     this.analytics?.destroy();
     this.analytics = null;
+    this.captionsRo?.disconnect();
+    this.captionsRo = this.captionsEl = this.cueShown = null;
     this.stage?.destroy();
     this.root?.replaceChildren();
     this.emitter.clear();
@@ -551,6 +637,7 @@ export class Player {
 
   private renderTime(t: number): void {
     if (this.project && this.currentScene && this.stage) this.stage.render(this.project, this.currentScene.id, t);
+    this.renderCaption(t);
     this.syncAudio(t);
     if (this.progressEl && this.project) this.progressEl.style.width = `${(Math.min(1, t / Math.max(0.01, this.duration())) * 100).toFixed(2)}%`;
     this.emitter.emit("timeupdate", { time: t });

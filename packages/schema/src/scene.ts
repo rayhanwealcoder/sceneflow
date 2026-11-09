@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { actionSchema } from "./actions.js";
+import { sceneScriptSchema } from "./ai.js";
 import { productRefSchema } from "./commerce.js";
 import { safeUrl } from "./url.js";
 
@@ -102,6 +103,8 @@ export const sceneSchema = z
     layers: z.array(layerSchema).max(200).default([]),
     transition: z.object({ type: z.enum(["none", "fade", "slide", "zoom"]), duration: z.number().min(0).max(5) }).default({ type: "none", duration: 0 }),
     preset: presetRefSchema.optional(),
+    /** Storyboard notes (voiceover text, shot description) from the AI script step; editor-only. */
+    script: sceneScriptSchema.optional(),
   })
   .refine((s) => s.end > s.start, { message: "Scene end must be after start", path: ["end"] });
 

@@ -55,7 +55,18 @@ Project page → **Analytics**: loads, plays, completion, average watch time, cl
 
 A 6–10 s AI clip is plenty. Ask for one slow continuous camera move, no cuts, no text, subject on the left. Ready prompts for Veo, Sora, Runway and Kling are in [docs/ai-video-prompts.md](ai-video-prompts.md) and under the upload box in the app.
 
-### 7. When something does not work
+### 7. Let AI write, voice and caption it
+
+In the editor click **✨ AI**:
+
+- **Script** — say what the video is about and for whom, pick a length and tone, and you get scenes with a headline, a supporting line, a spoken line and a shot description (plus a ready prompt for an AI video tool). *Build these scenes* puts them on the canvas; Ctrl+Z undoes it.
+- **Copy** — select any text, button, badge or hotspot and get five alternatives (shorter, more urgent, benefit-led…). Click one to use it.
+- **Voiceover** — pick a voice, *Generate all scenes*. Each line becomes an audio track on its scene; the scene grows if the line is longer.
+- **Captions** — made from the lines automatically (timed over the audio), editable word by word, shown on the published video with a CC button for visitors. Switch them off per project if you prefer.
+
+Everything works without any AI account: you get starter text to edit and the computer's built-in voice. Site owners add `ANTHROPIC_API_KEY` (real scripts and copy, written by Claude) and `ELEVENLABS_API_KEY` (natural voices, captions transcribed from audio) in `apps/api/.env`; the panel's *Setup notes* say exactly what each key adds.
+
+### 8. When something does not work
 
 Project page → **Something not working?** runs the whole chain for you: draft, media, published version, site reachable, plugin connected, WooCommerce available, pushed version, what the site actually serves, placements. Each line that fails has a button that takes you to the fix.
 
@@ -80,6 +91,12 @@ pnpm build && pnpm dev  # web :3000, api :4800, worker
 | `pnpm smoke` | End-to-end check against a running stack |
 | `node scripts/e2e/scroll-smoothness.mjs` | Real-Chrome scroll-scrub measurement with a generated clip (frame update rate, seek latency) |
 | `node scripts/e2e/analytics.mjs` | Real-Chrome visit → events → dashboard summary |
+| `node scripts/e2e/pages.mjs` | Real Chrome walks every page (sign-up → editor → analytics → …) and fails on any page error |
+| `node scripts/e2e/ai.mjs [--record]` | Real Chrome through the UI: AI script → scenes → voiceovers → captions → publish → player; `--record` writes `dist/walkthrough/sceneflow-walkthrough.mp4` |
+
+AI keys are optional (`apps/api/.env.example`, section "AI"): without them the API serves starter text and uses the operating system's voice (Windows / macOS built in; `espeak-ng` on Linux).
+
+Security defaults worth knowing: sign-in is rate-limited per IP and locked progressively per account after 5 wrong passwords; set `TRUST_PROXY=true` only when the API runs behind Nginx / Cloudflare (otherwise forwarded-IP headers are ignored on purpose); run `pnpm audit --prod` before a release.
 
 Local WordPress testing uses a LocalWP site; point the plugin at the local app with `wp option update sceneflow_app_url http://localhost:3000`.
 

@@ -1,4 +1,4 @@
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 export { Player, type PlayerOptions, type PlayerState, type EffectiveMode } from "./player.js";
 export { mount, type MountOptions } from "./embed.js";
 export { Analytics, analyticsAllowed, type AnalyticsOptions, type TrackData } from "./analytics.js";

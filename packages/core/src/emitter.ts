@@ -12,6 +12,7 @@ export type EventMap = {
   addToCart: { productId: string; variantId?: string; quantity: number; product: ProductRef; result: CommerceResult };
   buyNow: { productId: string; variantId?: string; quantity: number; product: ProductRef; result: CommerceResult };
   couponApplied: { code: string; result: CommerceResult };
+  captionsChange: { enabled: boolean };
   complete: undefined;
   error: { code: string; message: string };
 };

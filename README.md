@@ -33,14 +33,14 @@ pnpm typecheck
 
 Create the test database once: `psql -U postgres -c "create database sceneflow_test;"`.
 
-End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Two of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary.
+End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`.
 
 ## Layout
 
 ```
 apps/web          Next.js app: sign in, projects, brand kit, upload, scene editor + timeline + presets (/projects/:id/editor), draft preview, publish, embed snippet
 packages/editor   Framework-free editor domain: geometry, scene/layer operations, responsive overrides, undo history, templates, presets, brand kit
-apps/api          Fastify API: auth, workspaces, projects, versions, publish, media uploads, commerce catalogs, presets, brand kits, public runtime config
+apps/api          Fastify API: auth, workspaces, projects, versions, publish, media uploads, commerce catalogs, presets, brand kits, AI (script/copy/voiceover/captions), analytics, public runtime config
 apps/worker       Media processing jobs (pg-boss on Postgres): metadata, poster, proxy, thumbnails, renditions
 packages/schema   Project JSON schema (Zod) — the single platform-agnostic format (+ preset and brand kit schemas)
 packages/core     Published runtime (window.SceneFlow): poster-first, lazy, typed events, commerce adapters, plain embed, no editor code
@@ -71,6 +71,10 @@ Each connector folder has a `connector.json` and a get-started `README.md`; see 
 ## Analytics
 
 The runtime sends anonymous, batched playback events (loads, plays, quartiles, scene changes, clicks, add-to-carts, watched ranges) to `POST /api/v1/analytics/events`; the project page's **Analytics** view shows totals, loads vs plays per day, an engagement timeline, a funnel and per-element / scene / product / page tables. No cookies, no IP addresses, Do Not Track respected; WordPress sites can switch it off in Settings → SceneFlow. Need footage? `docs/ai-video-prompts.md` has prompts for AI video tools tuned for overlays and scroll-scrub.
+
+## AI (optional, provider based)
+
+✨ AI in the editor writes a script + storyboard from a brief and builds the scenes, suggests copy for any element, generates a voiceover per scene and makes captions (shown by the runtime with a CC button). Providers live in `packages/server/src/ai`: Claude through `@anthropic-ai/sdk` (`ANTHROPIC_API_KEY`), ElevenLabs for voices and transcription (`ELEVENLABS_API_KEY`), and no-key fallbacks (starter text, the OS voice) so the flow always works. `GET /api/v1/ai/status` tells the editor what is configured.
 
 ## Presets and brand kit
 

@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { storageConfigFromEnv, storageEnvSchema, type StorageConfig } from "@sceneflow/server";
+import { storageConfigFromEnv, storageEnvSchema, type AiEnv, type StorageConfig } from "@sceneflow/server";
 import { z } from "zod";
 
 const envSchema = z
@@ -13,8 +13,17 @@ const envSchema = z
     MAX_UPLOAD_MB: z.coerce.number().int().positive().default(2048),
     /** Allow connecting sites on localhost / private networks (needed for LocalWP). Default: on outside production. */
     ALLOW_PRIVATE_SITES: z.enum(["true", "false"]).optional(),
+    /** Trust X-Forwarded-* headers — only when the API sits behind Nginx / Cloudflare. */
+    TRUST_PROXY: z.enum(["true", "false"]).default("false"),
     /** Folder with the built connector zips (pnpm build:connectors), served at /downloads/. */
     WP_PLUGIN_DIST_DIR: z.string().default("../../dist/connectors"),
+    // ---- AI (all optional; without keys the product still works with starter text + built-in voices) ----
+    ANTHROPIC_API_KEY: z.string().optional(),
+    AI_MODEL: z.string().optional(),
+    AI_TEXT_PROVIDER: z.enum(["auto", "anthropic", "starter"]).optional(),
+    ELEVENLABS_API_KEY: z.string().optional(),
+    ELEVENLABS_VOICE_ID: z.string().optional(),
+    AI_SPEECH_PROVIDER: z.enum(["auto", "elevenlabs", "system", "off"]).optional(),
   })
   .merge(storageEnvSchema);
 
@@ -29,9 +38,13 @@ export interface AppConfig {
   secureCookies: boolean;
   logger: boolean;
   allowPrivateSites: boolean;
+  /** Behind a reverse proxy the client IP comes from X-Forwarded-For; otherwise that header is ignored. */
+  trustProxy: boolean;
   wpPluginDistDir: string | null;
   /** Per-IP rate limits on auth/publish. Off in tests, where everything comes from one address. */
   rateLimits?: boolean;
+  /** AI provider keys / choices (see packages/server/src/ai). */
+  ai: AiEnv;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig & { port: number } {
@@ -48,7 +61,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig &
     secureCookies: e.NODE_ENV === "production",
     logger: e.NODE_ENV !== "test",
     allowPrivateSites: e.ALLOW_PRIVATE_SITES ? e.ALLOW_PRIVATE_SITES === "true" : e.NODE_ENV !== "production",
+    trustProxy: e.TRUST_PROXY === "true",
     wpPluginDistDir: resolve(process.cwd(), e.WP_PLUGIN_DIST_DIR),
+    ai: { ANTHROPIC_API_KEY: e.ANTHROPIC_API_KEY, AI_MODEL: e.AI_MODEL, AI_TEXT_PROVIDER: e.AI_TEXT_PROVIDER, ELEVENLABS_API_KEY: e.ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID: e.ELEVENLABS_VOICE_ID, AI_SPEECH_PROVIDER: e.AI_SPEECH_PROVIDER },
   };
 }
 
@@ -65,8 +80,10 @@ export function testConfig(storageDir: string, overrides: Partial<AppConfig> = {
     secureCookies: false,
     logger: false,
     allowPrivateSites: true,
+    trustProxy: false,
     wpPluginDistDir: null,
     rateLimits: false,
+    ai: { AI_TEXT_PROVIDER: "starter", AI_SPEECH_PROVIDER: "off" },
     ...overrides,
   };
 }

@@ -1,7 +1,7 @@
 {
   "id": "webflow",
   "name": "SceneFlow for Webflow (plain embed)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "zip": "sceneflow-webflow.zip",
   "root": ".",
   "zipRoot": "sceneflow-webflow",

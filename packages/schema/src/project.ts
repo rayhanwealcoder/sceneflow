@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captionsSchema } from "./ai.js";
 import { sceneSchema, videoSourceSchema } from "./scene.js";
 import { safeUrl } from "./url.js";
 
@@ -23,6 +24,8 @@ export const playbackSchema = z.object({
   showProgress: z.boolean().default(false),
   mobileFallback: z.enum(["normal", "autoplay", "poster", "scroll"]).default("normal"),
   reducedMotion: z.enum(["normal", "poster"]).default("normal"),
+  /** Show the project's captions (when it has any). Visitors can still toggle them with the CC button. */
+  captions: z.boolean().default(true),
 });
 export type Playback = z.infer<typeof playbackSchema>;
 
@@ -62,6 +65,8 @@ export const projectSchema = z
     fonts: z.object({ google: z.array(z.string().regex(/^[A-Za-z0-9 ]{2,60}$/)).max(6).default([]) }).optional(),
     /** Where the runtime reports anonymous playback events (set at publish time); `enabled: false` turns them off. */
     analytics: z.object({ endpoint: safeUrl, enabled: z.boolean().default(true) }).optional(),
+    /** Subtitles on the project clock (doc §10.2 captions). Rendered by the runtime, editable in the editor. */
+    captions: captionsSchema.optional(),
   })
   .superRefine((p, ctx) => {
     const ids = new Set<string>();

@@ -4,7 +4,7 @@ Tags: video, interactive video, shoppable video, woocommerce, gutenberg
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.0
+Stable tag: 0.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -53,6 +53,9 @@ No. Without WooCommerce, product cards and buttons open the product link you set
 Yes. Published configurations are stored in your database and served from your site; only the media files load from SceneFlow's storage.
 
 == Changelog ==
+
+= 0.5.0 =
+* Runtime 0.5.0: captions (subtitles) on published videos with a CC button for visitors; the choice is remembered in the visitor's browser only. Nothing new is sent anywhere.
 
 = 0.4.0 =
 * Runtime 0.4.0: brand-kit web fonts (only when the project opts in to Google Fonts), preset-based elements render exactly as designed, generic `data-sceneflow-id` embed support.

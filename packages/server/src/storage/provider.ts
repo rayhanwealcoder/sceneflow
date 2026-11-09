@@ -21,6 +21,8 @@ export interface StorageProvider {
   statOriginal(key: string): Promise<number | null>;
   /** Local filesystem path of an original, downloading it first for remote providers. */
   readOriginal(key: string): Promise<string>;
+  /** Server-side write of an original (generated media such as AI voiceovers). Returns bytes written. */
+  putOriginal(key: string, body: Buffer, contentType: string): Promise<number>;
   /** Publishes a derived file (proxy, poster, thumbnail) and returns its public URL. */
   putPublic(key: string, localFilePath: string, contentType: string): Promise<string>;
   publicUrl(key: string): string;

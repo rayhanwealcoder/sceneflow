@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { presetFromLayers, presetFromScene, setLayerTiming } from "@sceneflow/editor";
+import { presetFromLayers, presetFromScene, setLayerTiming, suggestedVoiceover, videoPromptFor } from "@sceneflow/editor";
 import { CANVAS_RATIOS, resolveLayer, type Action, type Layer, type PresetConfig, type ProductRef, type Scene } from "@sceneflow/schema";
 import { useEditor, useScene, useSelectedLayers } from "@/lib/editorStore";
 import type { MediaAsset } from "@/lib/types";
@@ -67,7 +67,7 @@ function PresetUpdateNotice({ layer }: { layer: Layer }) {
 // ---------------- scene ----------------
 
 function SceneInspector({ workspaceId }: { workspaceId: string }) {
-  const { project, updateScene, setSceneDuration, setProjectMeta, mode } = useEditor();
+  const { project, updateScene, setSceneDuration, setProjectMeta, mode, setSceneScript, openAi } = useEditor();
   const scene = useScene();
   const [picker, setPicker] = useState<PickerType | null>(null);
   const bg = scene.background;
@@ -142,6 +142,26 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
           onChange={(type) => updateScene(scene.id, { transition: { ...scene.transition, type } })}
         />
         <NumberField label="Length" suffix="s" value={scene.transition.duration} step={0.1} min={0} max={5} onChange={(duration) => updateScene(scene.id, { transition: { ...scene.transition, duration } })} />
+      </div>
+
+      <div className="stack" style={{ gap: 6 }}>
+        <div className="row between">
+          <h3 className="small muted" style={{ margin: 0 }}>
+            VOICEOVER
+          </h3>
+          <button className="btn sm" onClick={() => openAi("voiceover")} title="Read this line with a voice and put the audio on the scene">
+            🎙 Generate voice
+          </button>
+        </div>
+        <TextField label="What the voice says in this scene" multiline value={scene.script?.voiceover ?? ""} onChange={(voiceover) => setSceneScript(scene.id, { voiceover })} placeholder={suggestedVoiceover(scene) || "Write a line, or let ✨ AI draft the script"} />
+        {scene.script?.shot && (
+          <div className="row between small muted">
+            <span style={{ flex: 1 }}>🎬 {scene.script.shot}</span>
+            <button className="btn sm" onClick={() => void navigator.clipboard?.writeText(videoPromptFor(scene.script!.shot!, scene.end - scene.start, project.canvas.aspectRatio))} title="Copy a ready prompt for an AI video tool">
+              Copy video prompt
+            </button>
+          </div>
+        )}
       </div>
 
       {mode === "advanced" && (
@@ -234,7 +254,7 @@ function ScrollDistanceField({ value, onChange }: { value: string; onChange: (v:
 type Tab = "content" | "style" | "layout" | "motion" | "action";
 
 function LayerInspector({ layer, workspaceId, projectId }: { layer: Layer; workspaceId: string; projectId: string }) {
-  const { device, mode, project, updateLayer, updateLayerForDevice, clearOverride, reorder, removeSelected, duplicateSelected, apply } = useEditor();
+  const { device, mode, project, updateLayer, updateLayerForDevice, clearOverride, reorder, removeSelected, duplicateSelected, apply, openAi } = useEditor();
   const scene = useScene();
   const setTiming = (id: string, t: { start?: number; end?: number }) => apply((p) => setLayerTiming(p, scene.id, id, t));
   const [tab, setTab] = useState<Tab>("content");
@@ -258,6 +278,11 @@ function LayerInspector({ layer, workspaceId, projectId }: { layer: Layer; works
           {(layer.name ?? layer.type).toUpperCase()}
         </h3>
         <span className="row" style={{ gap: 4 }}>
+          {(textual || layer.type === "hotspot" || isProduct) && (
+            <button className="btn sm" onClick={() => openAi("copy")} title="Suggest better text for this element">
+              ✨
+            </button>
+          )}
           <SavePresetButton workspaceId={workspaceId} config={() => presetFromLayers([layer])} defaultName={layer.name ?? layer.type} />
           <button className="btn sm" onClick={duplicateSelected} title="Duplicate (Ctrl+D)">
             ⧉
@@ -304,6 +329,7 @@ function LayerInspector({ layer, workspaceId, projectId }: { layer: Layer; works
                 </button>
               </div>
               <NumberField label="Volume" value={num(layer.content.volume, 1)} step={0.05} min={0} max={1} onChange={(volume) => setContent({ volume })} />
+              {layer.content.voiceover === true && <p className="muted small">AI voiceover for this scene. Change the line in the scene panel and regenerate; captions follow the text.</p>}
               <p className="muted small">Plays while this element is active (see Layout → timing). Audio is silent in scroll-scrub mode and when the project starts muted.</p>
             </>
           )}

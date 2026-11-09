@@ -1,4 +1,4 @@
-import type { Db, JobSender, StorageProvider, WordPressConnector } from "@sceneflow/server";
+import type { AiServices, Db, JobSender, StorageProvider, WordPressConnector } from "@sceneflow/server";
 import type { AppConfig } from "./config.js";
 
 export interface Ctx {
@@ -6,6 +6,8 @@ export interface Ctx {
   storage: StorageProvider;
   queue: JobSender;
   connector: WordPressConnector;
+  /** Script / copy / voiceover / captions providers (doc §10.2); always present, degrades without keys. */
+  ai: AiServices;
   /** Key for encrypting per-site shared secrets at rest. */
   siteSecretKey: Buffer;
   cfg: AppConfig;

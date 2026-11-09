@@ -156,6 +156,8 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
     const resolved = await resolvePublishedMedia(ctx.db, version.configJson);
     // Published copies know where to report anonymous playback events (doc §24); the editor's own setting can turn it off.
     resolved.analytics = { endpoint: `${ctx.cfg.publicUrl}/api/v1/analytics/events`, enabled: version.configJson.analytics?.enabled ?? true };
+    // Storyboard notes (voiceover text, shot descriptions) are editor-only: visitors never download them.
+    resolved.scenes = resolved.scenes.map(({ script: _script, ...scene }) => scene);
     const media = await mediaReadiness(ctx.db, resolved);
     await ctx.db.transaction(async (tx) => {
       await tx.update(projectVersions).set({ configJson: resolved, checksum: checksum(resolved), state: "published" }).where(eq(projectVersions.id, version.id));

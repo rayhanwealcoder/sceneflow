@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { createWriteStream } from "node:fs";
-import { copyFile, mkdir, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { hmacSign, hmacVerify } from "../sign.js";
@@ -92,6 +92,13 @@ export class LocalStorageProvider implements StorageProvider {
       throw err;
     }
     return bytes;
+  }
+
+  async putOriginal(key: string, body: Buffer): Promise<number> {
+    const dest = this.originalPath(key);
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, body);
+    return body.length;
   }
 
   async statOriginal(key: string): Promise<number | null> {

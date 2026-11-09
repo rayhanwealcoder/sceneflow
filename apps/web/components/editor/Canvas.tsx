@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ensureStyles, Stage } from "@sceneflow/core";
 import { HANDLES, angleFromCenter, moveFrame, pxToPct, resizeFrame, rotateFrame, snapFrame, type Guide, type Handle } from "@sceneflow/editor";
-import { aspectRatioValue, resolveLayer, type Frame, type Layer, type Project, type Scene } from "@sceneflow/schema";
+import { aspectRatioValue, cueAt, resolveLayer, type Frame, type Layer, type Project, type Scene } from "@sceneflow/schema";
 import { useEditor, useScene } from "@/lib/editorStore";
 import { usePlayhead } from "@/lib/playhead";
 
@@ -217,11 +217,26 @@ export function Canvas() {
             <div key={i} className={`ed-guide ${g.axis}`} style={g.axis === "x" ? { left: `${g.pos}%` } : { top: `${g.pos}%` }} />
           ))}
         </div>
+        {project.captions && project.captions.cues.length > 0 && project.playback.captions !== false && <CaptionPreview project={project} scene={scene} advanced={mode === "advanced"} scale={fit.w / 1280} />}
       </div>
       <div className="ed-canvas-hint muted small">
         {device === "desktop" ? "Desktop layout" : `${device[0]!.toUpperCase()}${device.slice(1)} layout — changes here only affect ${device}`} · drag to move, Shift+drag corner keeps ratio, Alt disables snapping
         {mode === "advanced" ? " · canvas follows the timeline playhead" : ""}
       </div>
+    </div>
+  );
+}
+
+/** Subtitle preview: follows the playhead in Advanced mode, shows the scene's first cue otherwise. */
+function CaptionPreview({ project, scene, advanced, scale }: { project: Project; scene: Scene; advanced: boolean; scale: number }) {
+  const time = usePlayhead((s) => s.time);
+  const caps = project.captions!;
+  const cue = cueAt(caps.cues, advanced ? time : scene.start + 0.05) ?? (advanced ? null : caps.cues.find((c) => c.start >= scene.start && c.start < scene.end) ?? null);
+  if (!cue) return null;
+  const base = caps.style.size === "s" ? 19 : caps.style.size === "l" ? 30 : 24;
+  return (
+    <div className="ed-caption" data-pos={caps.style.position} style={{ fontSize: Math.max(9, base * scale) }} title="Captions preview — edit them under ✨ AI → Captions">
+      {cue.text}
     </div>
   );
 }

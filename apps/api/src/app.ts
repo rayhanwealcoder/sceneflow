@@ -4,9 +4,10 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
-import { createDb, createQueue, createStorage, deriveKey, runMigrations, WordPressConnector, type JobSender } from "@sceneflow/server";
+import { createAi, createDb, createQueue, createStorage, deriveKey, runMigrations, WordPressConnector, type AiServices, type JobSender } from "@sceneflow/server";
 import type { AppConfig } from "./config.js";
 import { HttpError, type Ctx } from "./context.js";
+import { aiRoutes } from "./routes/ai.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { authRoutes } from "./routes/auth.js";
 import { commerceRoutes } from "./routes/commerce.js";
@@ -20,6 +21,8 @@ export interface BuildDeps {
   /** Inject a fake in tests; defaults to a pg-boss instance on the same database. */
   queue?: JobSender & { stop?: () => Promise<void> };
   connector?: WordPressConnector;
+  /** Inject fake AI providers in tests; defaults to what the environment configures. */
+  ai?: AiServices;
 }
 
 export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<FastifyInstance> {
@@ -29,9 +32,20 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   const storage = await createStorage(cfg.storage);
   const queue = deps.queue ?? (await createQueue(cfg.databaseUrl));
   const connector = deps.connector ?? new WordPressConnector();
-  const ctx: Ctx = { db, storage, queue, connector, siteSecretKey: deriveKey(cfg.sessionSecret, "site-secrets"), cfg };
+  const ai = deps.ai ?? (await createAi(cfg.ai));
+  const ctx: Ctx = { db, storage, queue, connector, ai, siteSecretKey: deriveKey(cfg.sessionSecret, "site-secrets"), cfg };
 
-  const app = Fastify({ logger: cfg.logger, trustProxy: true, bodyLimit: 1024 * 1024 });
+  // trustProxy only behind a reverse proxy (TRUST_PROXY=true): otherwise anyone could spoof X-Forwarded-For and dodge per-IP limits.
+  const app = Fastify({ logger: cfg.logger, trustProxy: cfg.trustProxy, bodyLimit: 1024 * 1024 });
+
+  // Baseline response hardening: no MIME sniffing, no framing of our HTML (demo / preview pages), private API
+  // answers never land in shared caches, referrers stay on our origin.
+  app.addHook("onSend", async (req, reply) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("referrer-policy", "strict-origin-when-cross-origin");
+    if (String(reply.getHeader("content-type") ?? "").startsWith("text/html")) reply.header("x-frame-options", "DENY");
+    if (req.url.startsWith("/api/")) reply.header("cache-control", "no-store");
+  });
 
   // The web app talks to the API with cookies; the public analytics ingest is open to every site that embeds a player.
   await app.register(cors, {
@@ -67,6 +81,7 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   await app.register(commerceRoutes, { ctx });
   await app.register(presetRoutes, { ctx });
   await app.register(analyticsRoutes, { ctx });
+  await app.register(aiRoutes, { ctx });
   await app.register(publicRoutes, { ctx });
 
   // Built WordPress plugin zip (pnpm build:wp) for the "Download plugin" button.

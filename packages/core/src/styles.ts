@@ -36,13 +36,22 @@ export const RUNTIME_CSS = `
 .sf-placeholder{display:none}
 .sf-stage.sf-editing .sf-placeholder{display:flex;align-items:center;justify-content:center;border:1px dashed rgba(255,255,255,.7);color:#fff;font-size:calc(14px*var(--sf-scale));background:rgba(0,0,0,.25)}
 .sf-stage.sf-editing .sf-layer{pointer-events:none}
-.sf-play{position:absolute;inset:0;margin:auto;width:72px;height:72px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:28px;cursor:pointer;display:grid;place-items:center;transition:transform .15s,opacity .2s}
+.sf-play{position:absolute;inset:0;margin:auto;width:72px;height:72px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:28px;cursor:pointer;display:grid;place-items:center;transition:transform .15s,opacity .2s;z-index:5}
 .sf-play:hover{transform:scale(1.06)}
 .sf-player[data-sf-state=playing] .sf-play{opacity:0;pointer-events:none}
 .sf-scroll{position:relative;width:100%}
 .sf-player.sf-pinned{position:sticky;top:0}
 .sf-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.25);z-index:5}
 .sf-progress>i{display:block;height:100%;width:0;background:#fff}
+.sf-captions{--sf-scale:1;position:absolute;left:50%;bottom:7%;transform:translateX(-50%);max-width:84%;box-sizing:border-box;background:rgba(0,0,0,.72);color:#fff;padding:.3em .7em;border-radius:.3em;font:600 calc(24px*var(--sf-scale))/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.6);white-space:pre-wrap;z-index:4;pointer-events:none}
+.sf-captions:empty{display:none}
+.sf-captions[data-sf-pos=top]{top:6%;bottom:auto}
+.sf-captions[data-sf-size=s]{font-size:calc(19px*var(--sf-scale))}
+.sf-captions[data-sf-size=l]{font-size:calc(30px*var(--sf-scale))}
+.sf-captions[data-sf-controls]{bottom:14%}
+.sf-player[data-sf-cc=off] .sf-captions{display:none}
+.sf-cc{position:absolute;right:10px;top:10px;z-index:6;border:1px solid rgba(255,255,255,.6);background:rgba(0,0,0,.55);color:#fff;font:700 11px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.5px;padding:5px 6px;border-radius:4px;cursor:pointer}
+.sf-cc[aria-pressed=false]{opacity:.5;text-decoration:line-through}
 @keyframes sf-pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}100%{box-shadow:0 0 0 calc(16px*var(--sf-scale)) rgba(255,255,255,0)}}
 @keyframes sf-toast{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 @media (prefers-reduced-motion:reduce){.sf-hotspot .sf-dot{animation:none}.sf-toast{animation:none}}

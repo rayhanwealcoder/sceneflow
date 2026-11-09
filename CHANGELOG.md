@@ -1,5 +1,37 @@
 # Changelog
 
+## Phase 9 — AI: script, storyboard, copy, voiceover, captions (2026-11-09)
+
+### Fixed
+- **Editor crashed after the goal picker** (React #185 "Maximum update depth"): `useSelectedLayers` returned a fresh array on every store read; under a React transition (client-side `router.push`) zustand 5 re-rendered until React gave up. The selector is now shallow-compared (`useShallow`). New `scripts/e2e/pages.mjs` walks every page in a real Chrome (sign-up → goal picker → editor + tour → edits → project → analytics → preview → connect → sign-out) and fails on any page error.
+
+### Added
+- **Provider-based AI (doc §10.2, "optional and provider-based")** in `packages/server/src/ai`: text (`anthropic` via the official SDK with structured outputs, model `claude-opus-5-5` by default; `starter` rule-based fallback with no key), speech (`elevenlabs`; `system` = Windows SAPI / macOS `say` / `espeak-ng` with no key), transcription (`elevenlabs`). `GET /api/v1/ai/status` tells the editor what is available and what key would add.
+- **Schema**: `captions { language, cues[], style { position, size }, source }` on the project, `playback.captions` switch, `scene.script { voiceover, shot }` storyboard notes (stripped at publish), validated `AiScript` shape and request schemas; `cueAt()` / `normalizeCues()` helpers. 34 schema tests.
+- **Editor logic** (`packages/editor/src/ai.ts`): `applyScript()` turns a script into scenes (splits a main video proportionally, keeps existing footage, gradient backgrounds otherwise; headline / subline / CTA per scene, brand kit applied, storyboard notes kept), `estimateCues()` + `captionsFromScript()` (speech-paced timing over the scene's voiceover audio or the scene), `addVoiceoverLayer()` (replaces an older take, grows a too-short scene), `videoPromptFor()` (ready prompt for Veo / Sora / Runway / Kling per shot). 47 editor tests.
+- **API** `POST /api/v1/ai/script | copy | voiceover | captions` (editor role, rate-limited, provider errors mapped to plain messages). A voiceover becomes a normal audio asset written server-side (`StorageProvider.putOriginal`, local + S3) and queued through the usual media pipeline (m4a + waveform). 18 API tests.
+- **Runtime 0.5.0**: caption bar (`.sf-captions`, scales with the player, top/bottom, 3 sizes, follows seeks and scroll-scrub) + CC button remembered per browser (`setCaptionsEnabled()`, `captionsChange` event). 32.7 KB gzip. 39 core tests.
+- **Editor UI**: ✨ AI button → one panel with *Script* (brief, length, tone → scene cards with headline, voiceover, shot, "Copy video prompt" → Build / Add after), *Copy* (suggestions for the selected element with tone + instruction chips, one-click apply, "✨" shortcut in the inspector), *Voiceover* (voice picker, per-scene lines, Generate / Generate all, progress until the audio is ready, optional captions), *Captions* (create from script, transcribe when available, position / size, show-on-site switch, editable cue list). Scene panel gets a Voiceover field + shot note; the canvas previews captions (follows the playhead in Advanced mode); tour step for AI.
+- `scripts/e2e/ai.mjs`: real Chrome through the UI — script → scenes → voiceovers for every scene via the server voice → captions → publish → published player shows captions in time, loads the m4a voiceovers, CC toggles; `--record` saves `dist/walkthrough/sceneflow-walkthrough.mp4`.
+- Tests: 156 Node tests (schema 34, editor 47, server 13, api 18, core 39, worker 5), typecheck 10/10.
+
+### Security (review of this phase + hardening pass)
+- **Fixed (high)**: the voiceover `voiceId` reached the Windows speech engine's PowerShell command line; the ASCII-apostrophe escaping could be bypassed with Unicode quotes (U+2018–U+201B), which PowerShell also treats as string delimiters. Now: `voiceId` is validated as an identifier (`[A-Za-z0-9 _.()-]{1,120}`), the system provider only accepts a voice name the machine itself reported, and `psString()` neutralises every quote variant and control character. Tests cover the bypass strings end-to-end (400) and the escaper.
+- **Sign-in brute force**: new `LoginGuard` — 5 failures per account or 30 per client address inside 15 minutes block further attempts (15 min, doubling up to 24 h, `429 TOO_MANY_ATTEMPTS` + `Retry-After`); a successful sign-in clears the account. Unknown emails cost the same scrypt work as wrong passwords (no timing enumeration). Per-IP request limits on auth stay in place.
+- **Proxy headers**: `trustProxy` was always on, so a direct client could spoof `X-Forwarded-For` and dodge per-IP limits. It is now `TRUST_PROXY=true` only behind Nginx / Cloudflare (default off).
+- **Response headers**: API — `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` on HTML, `Cache-Control: no-store` on `/api/*`; web app — `X-Frame-Options: SAMEORIGIN`, nosniff, Referrer-Policy, Permissions-Policy, `X-Powered-By` removed.
+- **Dependencies** (`pnpm audit --prod`): `@fastify/static` 8 → 10.1 (path traversal / route-guard bypass advisories), `drizzle-orm` 0.38 → 0.45 (identifier escaping advisory) + `drizzle-kit` 0.31, `postcss` ≥ 8.5.23 via override (Next's pinned 8.4.31). Remaining: a `zod` 3 memory-exhaustion advisory (fix is Zod 4 only) — accepted for now behind the 1 MB body limit and bounded collections; Zod 4 migration noted for later.
+- Reviewed and found sound: every new AI route requires a signed-in editor of the project's workspace; storage keys are built from server-side ids (`isSafeKey` enforced); voiceover responses never include storage keys; captions render through `textContent`; provider errors are mapped to plain messages (keys never echoed).
+
+### Decisions
+- No key, no dead end: the starter text provider and the OS voice keep the whole flow usable on a laptop; the panel says plainly when text is "starter" and which key upgrades it.
+- Captions are timed from the script by default (speech-paced estimate over the real audio length) because it needs no provider and is editable; transcription is the upgrade path when ElevenLabs is configured.
+- Storyboard notes never reach visitors (stripped at publish); captions do, as plain project data the runtime renders itself (no `<track>`, so they work for scene-based projects and in scroll mode).
+- Claude is called through the official SDK with structured outputs (`messages.parse` + `zodOutputFormat`); the result is re-validated by the project schema, so a provider can never write something the editor cannot load.
+
+### Deferred
+- Image generation, background removal, auto B-roll, video generation, translation / dubbing, avatars (doc 10.3 "Later AI"); word-accurate caption timing for system voices; per-scene voice choice; refusal fallbacks on the Claude call.
+
 ## Phase 8 — Analytics + smooth scroll-scrub (2026-11-09)
 
 ### Added

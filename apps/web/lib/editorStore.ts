@@ -1,12 +1,14 @@
 "use client";
 
 import { create } from "zustand";
-import type { Device, Layer, Preset, Project, Scene } from "@sceneflow/schema";
+import { useShallow } from "zustand/react/shallow";
+import type { AiScript, Captions, Device, Layer, Preset, Project, Scene } from "@sceneflow/schema";
 import * as ed from "@sceneflow/editor";
 import type { BrandKitRow, LibraryPreset } from "./types";
 
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 export type EditorMode = "simple" | "advanced";
+export type AiTab = "script" | "copy" | "voiceover" | "captions";
 
 interface EditorState {
   loaded: boolean;
@@ -25,6 +27,8 @@ interface EditorState {
   brandKit: BrandKitRow | null;
   /** Presets saved by the user / workspace (official ones are code in @sceneflow/editor). */
   library: LibraryPreset[];
+  /** AI assistant panel (script / copy / voiceover / captions). */
+  ai: { open: boolean; tab: AiTab };
 }
 
 export type ApplyResult = { ok: true } | { ok: false; message: string };
@@ -40,6 +44,17 @@ interface EditorActions {
   applyBrand(): ApplyResult;
   /** Pulls the newer look of a library preset into one element. */
   refreshPreset(layerId: string, preset: Preset): void;
+  openAi(tab?: AiTab): void;
+  closeAi(): void;
+  /** Turns an AI script into scenes (replace or append). Returns the new scene ids. */
+  applyScript(script: AiScript, mode: "replace" | "append"): string[];
+  setSceneScript(sceneId: string, patch: { voiceover?: string; shot?: string }): void;
+  setCaptions(captions: Captions | null): void;
+  /** Re-times captions from every scene's voiceover text (over its audio when it has one). */
+  regenerateCaptions(): void;
+  setPlaybackCaptions(on: boolean): void;
+  /** Puts a generated voiceover asset on a scene (replacing an older one; the scene grows to fit). */
+  addVoiceover(sceneId: string, audio: { assetId: string; src: string; duration: number }): void;
   load(project: Project, savedVersion: number | null): void;
   /** Applies a pure Project -> Project operation with undo history (coalesced while a gesture is active). */
   apply(fn: (p: Project) => Project): void;
@@ -101,8 +116,23 @@ export const useEditor = create<EditorStore>()((set, get) => ({
   showSafeArea: false,
   brandKit: null,
   library: [],
+  ai: { open: false, tab: "script" },
 
   setBrandKit: (brandKit) => set({ brandKit }),
+  openAi: (tab) => set((s) => ({ ai: { open: true, tab: tab ?? s.ai.tab } })),
+  closeAi: () => set((s) => ({ ai: { ...s.ai, open: false } })),
+  applyScript: (script, mode) => {
+    const { project, brandKit, apply } = get();
+    const r = ed.applyScript(project, script, { brand: brandKit?.config ?? null, mode });
+    apply(() => r.project);
+    set({ sceneId: r.sceneIds[0] ?? get().sceneId, selection: [] });
+    return r.sceneIds;
+  },
+  setSceneScript: (sceneId, patch) => get().apply((p) => ed.setSceneScript(p, sceneId, patch)),
+  setCaptions: (captions) => get().apply((p) => ed.setCaptions(p, captions)),
+  regenerateCaptions: () => get().apply((p) => ed.setCaptions(p, ed.captionsFromScript(p))),
+  setPlaybackCaptions: (on) => get().apply((p) => ({ ...p, playback: { ...p.playback, captions: on } })),
+  addVoiceover: (sceneId, audio) => get().apply((p) => ed.addVoiceoverLayer(p, sceneId, audio).project),
   setLibrary: (library) => set({ library }),
   upsertLibrary: (preset) => set((s) => ({ library: [preset, ...s.library.filter((p) => p.id !== preset.id)] })),
   removeFromLibrary: (id) => set((s) => ({ library: s.library.filter((p) => p.id !== id) })),
@@ -254,8 +284,15 @@ export const useEditor = create<EditorStore>()((set, get) => ({
 
 /** Convenience selectors. */
 export const useScene = () => useEditor((s) => s.project.scenes.find((sc) => sc.id === s.sceneId) ?? s.project.scenes[0]!);
+/**
+ * Selected layers of the current scene. The selector builds a new array, so it must be shallow-compared:
+ * zustand 5 re-renders until the snapshot is referentially stable, and under a React transition (e.g.
+ * arriving via router.push from the goal picker) an always-new array loops until "Maximum update depth".
+ */
 export const useSelectedLayers = () =>
-  useEditor((s) => {
-    const scene = s.project.scenes.find((sc) => sc.id === s.sceneId);
-    return scene ? scene.layers.filter((l) => s.selection.includes(l.id)) : [];
-  });
+  useEditor(
+    useShallow((s) => {
+      const scene = s.project.scenes.find((sc) => sc.id === s.sceneId);
+      return scene ? scene.layers.filter((l) => s.selection.includes(l.id)) : [];
+    }),
+  );
