@@ -1,4 +1,4 @@
-import { playbackSchema, resolveLayer, type Device, type Frame, type Layer, type Project, type Scene, type StyleMap } from "@sceneflow/schema";
+import { playbackSchema, resolveLayer, type BrandKit, type Device, type Frame, type Layer, type Project, type Scene, type StyleMap } from "@sceneflow/schema";
 import { createLayer, createScene, type ElementType } from "./defaults.js";
 import { alignFrames, boundsOf, distributeFrames, round2, type AlignMode } from "./geometry.js";
 import { newId } from "./ids.js";
@@ -73,8 +73,8 @@ export function setSceneDuration(p: Project, sceneId: string, duration: number):
 
 // ---------- layers ----------
 
-export function addLayer(p: Project, sceneId: string, type: ElementType, init: Partial<Layer> = {}): { project: Project; layerId: string } {
-  const layer = createLayer(type, init);
+export function addLayer(p: Project, sceneId: string, type: ElementType, init: Partial<Layer> = {}, kit?: BrandKit | null): { project: Project; layerId: string } {
+  const layer = createLayer(type, init, kit);
   return { project: mapScene(p, sceneId, (s) => ({ ...s, layers: [...s.layers, layer] })), layerId: layer.id };
 }
 

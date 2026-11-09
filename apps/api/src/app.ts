@@ -10,6 +10,7 @@ import { HttpError, type Ctx } from "./context.js";
 import { authRoutes } from "./routes/auth.js";
 import { commerceRoutes } from "./routes/commerce.js";
 import { mediaRoutes } from "./routes/media.js";
+import { presetRoutes } from "./routes/presets.js";
 import { projectRoutes } from "./routes/projects.js";
 import { publicRoutes } from "./routes/public.js";
 import { siteRoutes } from "./routes/sites.js";
@@ -57,6 +58,7 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   await app.register(mediaRoutes, { ctx });
   await app.register(siteRoutes, { ctx });
   await app.register(commerceRoutes, { ctx });
+  await app.register(presetRoutes, { ctx });
   await app.register(publicRoutes, { ctx });
 
   // Built WordPress plugin zip (pnpm build:wp) for the "Download plugin" button.

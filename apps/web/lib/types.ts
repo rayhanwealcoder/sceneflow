@@ -1,4 +1,25 @@
-export type { Product, ProductRef, ProductVariant } from "@sceneflow/schema";
+import type { BrandKit, Preset } from "@sceneflow/schema";
+
+export type { BrandKit, Preset, PresetConfig, PresetInput, PresetScope, PresetType, Product, ProductRef, ProductVariant } from "@sceneflow/schema";
+
+/** A preset stored in the cloud library (personal or workspace scope). */
+export interface LibraryPreset extends Preset {
+  workspaceId: string;
+  mine: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BrandKitRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  config: BrandKit;
+  version: number;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface User {
   id: string;

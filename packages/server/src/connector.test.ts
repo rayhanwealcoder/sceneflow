@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { canonicalString, normalizeSiteUrl, restUrl, sha256Hex, signConnectorRequest, verifyConnectorSignature } from "./connector.js";
 import { decryptString, deriveKey, encryptString } from "./crypto.js";
 
-// Deterministic vector shared with the PHP plugin test (wordpress/sceneflow/tests/run.php).
+// Deterministic vector shared with the PHP plugin test (connectors/wordpress/sceneflow/tests/run.php).
 const vector = {
   secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   siteId: "6f1d2c3b-4a5e-4f60-9b7c-8d9e0f1a2b3c",
@@ -27,7 +27,7 @@ describe("connector signature", () => {
     expect(verifyConnectorSignature({ secret: vector.secret, method: vector.method, route: vector.route, body: vector.body, timestamp: vector.timestamp, nonce: "short", signature: headers["x-sceneflow-signature"], now: vector.timestamp })).toEqual({ ok: false, error: "invalid_nonce" });
 
     // Write the fixture the PHP test consumes so both implementations stay in lock-step.
-    const dir = fileURLToPath(new URL("../../../wordpress/sceneflow/tests/fixtures/", import.meta.url));
+    const dir = fileURLToPath(new URL("../../../connectors/wordpress/sceneflow/tests/fixtures/", import.meta.url));
     await mkdir(dir, { recursive: true });
     await writeFile(`${dir}signature.json`, JSON.stringify({ ...vector, canonical: canonicalString(vector.method, vector.route, vector.timestamp, vector.nonce, vector.body), bodySha256: sha256Hex(vector.body), signature: headers["x-sceneflow-signature"] }, null, 2));
   });

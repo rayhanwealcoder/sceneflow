@@ -1,4 +1,4 @@
-import type { Project } from "@sceneflow/schema";
+import { PRESET_TYPES, type BrandKit, type PresetConfig, type PresetInput, type Project } from "@sceneflow/schema";
 import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -145,6 +145,49 @@ export const catalogProducts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("catalog_products_workspace_idx").on(t.workspaceId, t.updatedAt)],
+);
+
+/** Library scopes (doc 22.2). "official" presets ship with the editor and are not stored here. */
+export const PRESET_LIBRARY_SCOPES = ["personal", "workspace"] as const;
+export type PresetLibraryScope = (typeof PRESET_LIBRARY_SCOPES)[number];
+
+/** Cloud preset library: elements, scenes, motions and full templates saved by users (doc §22). */
+export const presets = pgTable(
+  "presets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Creator; personal presets are visible to this user only. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    scope: text("scope", { enum: PRESET_LIBRARY_SCOPES }).notNull().default("workspace"),
+    type: text("type", { enum: PRESET_TYPES }).notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    inputsJson: jsonb("inputs_json").$type<PresetInput[]>().notNull().default([]),
+    /** Bumped whenever the config changes; copies in projects remember the version they came from. */
+    version: integer("version").notNull().default(1),
+    configJson: jsonb("config_json").$type<PresetConfig>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("presets_workspace_type_idx").on(t.workspaceId, t.type, t.updatedAt)],
+);
+
+/** Brand kits (doc 22.4). `client_id` is reserved for the agency phase. */
+export const brandKits = pgTable(
+  "brand_kits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id"),
+    name: text("name").notNull().default("Brand"),
+    configJson: jsonb("config_json").$type<BrandKit>().notNull(),
+    version: integer("version").notNull().default(1),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("brand_kits_workspace_idx").on(t.workspaceId, t.updatedAt)],
 );
 
 export const MEDIA_TYPES = ["video", "image", "audio"] as const;

@@ -5,3 +5,4 @@ export * from "./scene.js";
 export * from "./project.js";
 export * from "./resolve.js";
 export * from "./motion.js";
+export * from "./presets.js";

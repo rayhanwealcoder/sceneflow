@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { BrandKitCard } from "@/components/BrandKitCard";
 import { Checklist } from "@/components/onboarding/Checklist";
 import { GoalPicker } from "@/components/onboarding/GoalPicker";
 import { SitesCard } from "@/components/SitesCard";
@@ -97,6 +98,8 @@ export default function ProjectsPage() {
           ))}
         </div>
       ) : null}
+
+      {workspace && <BrandKitCard workspaceId={workspace.id} />}
 
       <div id="sites">{workspace && <SitesCard workspaceId={workspace.id} initialOpen={connectOpen} />}</div>
     </div>

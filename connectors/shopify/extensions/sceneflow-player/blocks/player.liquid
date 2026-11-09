@@ -1,0 +1,33 @@
+{%- comment -%}
+  SceneFlow video — app block. Loads the published project JSON from the SceneFlow API (CORS-enabled) and
+  renders it with the SceneFlow runtime. The Shopify module registers the cart adapter, so product cards
+  add to the storefront cart through the AJAX Cart API; payments never leave Shopify.
+{%- endcomment -%}
+{%- liquid
+  assign project_id = block.settings.project_id | strip
+  assign api = block.settings.api_url | strip | default: 'https://api.sceneflow.app'
+  assign api = api | remove_last: '/'
+-%}
+{%- if project_id != blank -%}
+  <div class="sceneflow-block" {{ block.shopify_attributes }} style="max-width: {{ block.settings.max_width | default: '100%' | escape }}; margin: 0 auto;">
+    <div data-sceneflow-id="{{ project_id | escape }}" data-sceneflow-config="{{ api | escape }}/p/{{ project_id | escape }}.json"></div>
+  </div>
+  <script src="{{ 'sceneflow.runtime.min.js' | asset_url }}" data-auto defer></script>
+  <script src="{{ 'sceneflow.shopify.min.js' | asset_url }}" defer></script>
+{%- else -%}
+  <div class="sceneflow-block" {{ block.shopify_attributes }} style="padding: 1rem; border: 1px dashed #999; text-align: center;">
+    SceneFlow: paste the project ID from SceneFlow into the block settings.
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "SceneFlow video",
+  "target": "section",
+  "settings": [
+    { "type": "text", "id": "project_id", "label": "Project ID", "info": "SceneFlow → project page → Embed → copy the ID" },
+    { "type": "text", "id": "api_url", "label": "SceneFlow API URL", "default": "https://api.sceneflow.app", "info": "Only change for a self-hosted SceneFlow" },
+    { "type": "text", "id": "max_width", "label": "Maximum width (CSS)", "default": "100%" }
+  ]
+}
+{% endschema %}

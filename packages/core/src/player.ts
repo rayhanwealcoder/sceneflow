@@ -4,7 +4,7 @@ import { Emitter, type EventMap } from "./emitter.js";
 import { parseDistance, scrollProgress, smoothStep } from "./scroll.js";
 import { browserProfile, pickSource } from "./sources.js";
 import { Stage } from "./stage.js";
-import { ensureStyles } from "./styles.js";
+import { ensureFonts, ensureStyles } from "./styles.js";
 
 export interface PlayerOptions {
   target: string | HTMLElement;
@@ -122,6 +122,7 @@ export class Player {
     const root = this.root;
     if (!project || !root) return;
     ensureStyles();
+    ensureFonts(project.fonts?.google);
     root.replaceChildren();
     root.dataset.sceneflow = "ready";
 

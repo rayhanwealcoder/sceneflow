@@ -73,7 +73,7 @@ export function SitesCard({ workspaceId, initialOpen = false }: { workspaceId: s
       <div className="row between">
         <h2 style={{ margin: 0 }}>WordPress sites</h2>
         <div className="row">
-          <a className="btn sm" href={`${API_URL}/downloads/sceneflow.zip`}>
+          <a className="btn sm" href={`${API_URL}/downloads/sceneflow-wordpress.zip`}>
             Download plugin
           </a>
           <button className="btn sm primary" onClick={() => setOpen((v) => !v)}>

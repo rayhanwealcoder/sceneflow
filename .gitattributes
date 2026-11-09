@@ -1,0 +1,7 @@
+# Normalize to LF in the repo; editors on Windows may still use CRLF locally.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.zip binary
+*.mp4 binary

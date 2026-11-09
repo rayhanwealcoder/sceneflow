@@ -2,13 +2,17 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Project } from "@sceneflow/schema";
+import { ensureFonts } from "@sceneflow/core";
+import { googleFamilies, presetFromProject } from "@sceneflow/editor";
+import type { PresetConfig, Project } from "@sceneflow/schema";
 import { api, errorMessage } from "@/lib/api";
 import { useEditor } from "@/lib/editorStore";
 import { usePlayhead } from "@/lib/playhead";
 import { useSession } from "@/lib/session";
+import type { BrandKitRow } from "@/lib/types";
 import { Canvas } from "./Canvas";
 import { Inspector } from "./Inspector";
+import { SavePresetDialog } from "./SavePresetDialog";
 import { ScenesPanel } from "./ScenesPanel";
 import { Timeline } from "./Timeline";
 import { TopBar } from "./TopBar";
@@ -30,6 +34,7 @@ function tourSteps(project: Project): TourStep[] {
   const steps: TourStep[] = [
     { target: "canvas", title: "This is what visitors see", body: "Drag anything to move it, pull a corner to resize. Click an empty spot to edit the scene — that is where you swap the background for your own video.", placement: "right" },
     { target: "elements", title: "Add elements", body: "Text, buttons, images, hotspots, a product card… click one and it lands on the canvas with sensible defaults.", placement: "right" },
+    { target: "presets", title: "Ready-made pieces", body: "Starter presets drop in a headline, a call to action, a lower third or a whole scene. Save your own with ★ in the right panel and reuse them in every video.", placement: "right" },
     { target: "inspector", title: "Everything about the selected element lives here", body: "Content, style, position, motion and what happens on click. Nothing is hidden in menus.", placement: "left" },
   ];
   if (hasProduct) steps.push({ target: "inspector", title: "Pick your product", body: "Select the product card on the canvas, then “Choose a product”. With WooCommerce connected you get live prices and real add-to-cart; otherwise add a product with a link.", placement: "left" });
@@ -49,6 +54,8 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
   const [notice, setNotice] = useState<string | null>(null);
   const [tourIndex, setTourIndex] = useState<number | null>(null);
   const [sizeKb, setSizeKb] = useState(0);
+  const [saveTemplate, setSaveTemplate] = useState<PresetConfig | null>(null);
+  const [brandStaleDismissed, setBrandStaleDismissed] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<Promise<void> | null>(null);
   const tourKey = `sf_tour_editor_${user?.id ?? "anon"}`;
@@ -59,6 +66,18 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
     usePlayhead.setState({ time: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  // Workspace brand kit: new elements and official presets follow it; the editor previews its web fonts.
+  useEffect(() => {
+    api<{ kits: BrandKitRow[] }>(`/api/v1/brand-kits?workspaceId=${workspaceId}`)
+      .then((r) => useEditor.getState().setBrandKit(r.kits.find((k) => k.isDefault) ?? r.kits[0] ?? null))
+      .catch(() => useEditor.getState().setBrandKit(null));
+  }, [workspaceId]);
+  const brandKit = store.brandKit;
+  const projectFonts = store.project.fonts?.google;
+  useEffect(() => {
+    ensureFonts([...(brandKit ? googleFamilies(brandKit.config) : []), ...(projectFonts ?? [])]);
+  }, [brandKit, projectFonts]);
 
   // First visit (or ?tour=1): start the guided tour once the editor has painted.
   useEffect(() => {
@@ -205,18 +224,37 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
     [tourKey],
   );
 
+  const applyBrand = () => {
+    const r = store.applyBrand();
+    setNotice(r.ok ? `Brand kit “${brandKit?.name}” applied to every element. Undo with Ctrl+Z if you change your mind.` : r.message);
+    setBrandStaleDismissed(true);
+  };
+  // The project follows a kit that changed since it was applied (doc 22.3: offered, never forced).
+  const brandStale = !!brandKit && !!project.brand && project.brand.kitId === brandKit.id && project.brand.version < brandKit.version && !brandStaleDismissed;
+
   if (!loaded) return <p className="muted">Loading editor…</p>;
 
   return (
     <div className="ed">
-      <TopBar projectId={projectId} projectName={projectName} onPublish={() => void publish()} publishing={publishing} onPreviewSite={siteId ? () => void previewOnSite() : undefined} sizeKb={sizeKb} sizeWarnKb={SIZE_WARN_KB} onTour={() => setTourIndex(0)} />
+      <TopBar projectId={projectId} projectName={projectName} onPublish={() => void publish()} publishing={publishing} onPreviewSite={siteId ? () => void previewOnSite() : undefined} sizeKb={sizeKb} sizeWarnKb={SIZE_WARN_KB} onTour={() => setTourIndex(0)} onSaveTemplate={() => setSaveTemplate(presetFromProject(useEditor.getState().project))} onApplyBrand={applyBrand} />
       {notice && (
         <div className="ed-notice" onClick={() => setNotice(null)}>
           {notice}
         </div>
       )}
+      {brandStale && !notice && (
+        <div className="ed-notice row" style={{ cursor: "default" }}>
+          <span>Your brand kit “{brandKit!.name}” changed since this video was styled.</span>
+          <button className="btn sm primary" onClick={applyBrand}>
+            Apply new look
+          </button>
+          <button className="btn sm" onClick={() => setBrandStaleDismissed(true)}>
+            Not now
+          </button>
+        </div>
+      )}
       <div className="ed-body">
-        <ScenesPanel />
+        <ScenesPanel workspaceId={workspaceId} />
         <div className="ed-center">
           <Canvas />
           {mode === "advanced" && <Timeline />}
@@ -224,6 +262,7 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
         <Inspector workspaceId={workspaceId} projectId={projectId} />
       </div>
       {tourIndex !== null && <Tour steps={steps} index={tourIndex} onIndex={setTourIndex} onClose={closeTour} />}
+      {saveTemplate && <SavePresetDialog workspaceId={workspaceId} config={saveTemplate} defaultName={projectName} onSaved={(p) => { store.upsertLibrary(p); setNotice(`Template “${p.name}” saved. It appears under “Your templates” when you make a new video.`); }} onClose={() => setSaveTemplate(null)} />}
     </div>
   );
 }

@@ -22,6 +22,13 @@
       "when": 1794213240336,
       "tag": "0002_flaky_praxagora",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794218433288,
+      "tag": "0003_friendly_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

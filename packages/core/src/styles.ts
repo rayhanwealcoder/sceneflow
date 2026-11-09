@@ -48,6 +48,24 @@ export const RUNTIME_CSS = `
 @media (prefers-reduced-motion:reduce){.sf-hotspot .sf-dot{animation:none}.sf-toast{animation:none}}
 `;
 
+/**
+ * Loads Google Fonts families a project asked for (brand kit opt-in). One stylesheet per family, added once
+ * per document; names are restricted by the schema to letters, digits and spaces.
+ */
+export function ensureFonts(families: readonly string[] | undefined, doc: Document = document): void {
+  if (!families?.length) return;
+  for (const family of families) {
+    if (!/^[A-Za-z0-9 ]{2,60}$/.test(family)) continue;
+    const id = "sf-font-" + family.toLowerCase().replace(/\s+/g, "-");
+    if (doc.getElementById(id)) continue;
+    const link = doc.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family).replace(/%20/g, "+") + ":wght@400;500;600;700;800;900&display=swap";
+    doc.head.appendChild(link);
+  }
+}
+
 let injected = false;
 export function ensureStyles(doc: Document = document): void {
   if (injected || doc.querySelector("style[data-sceneflow]")) {

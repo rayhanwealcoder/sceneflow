@@ -6,8 +6,9 @@
   "scripts": {
     "bootstrap": "node scripts/setup.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "build:wp": "node scripts/build-wp.mjs",
-    "test:wp": "php wordpress/sceneflow/tests/run.php",
+    "build:connectors": "node scripts/build-connectors.mjs",
+    "build:wp": "node scripts/build-connectors.mjs --only wordpress",
+    "test:wp": "php connectors/wordpress/sceneflow/tests/run.php",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",

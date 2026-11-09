@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { setLayerTiming } from "@sceneflow/editor";
-import { CANVAS_RATIOS, resolveLayer, type Action, type Layer, type ProductRef, type Scene } from "@sceneflow/schema";
+import { presetFromLayers, presetFromScene, setLayerTiming } from "@sceneflow/editor";
+import { CANVAS_RATIOS, resolveLayer, type Action, type Layer, type PresetConfig, type ProductRef, type Scene } from "@sceneflow/schema";
 import { useEditor, useScene, useSelectedLayers } from "@/lib/editorStore";
 import type { MediaAsset } from "@/lib/types";
 import { ColorField, Field, NumberField, SelectField, TextField, Toggle } from "./fields";
@@ -11,6 +11,7 @@ import { MediaPicker, type PickerType } from "./MediaPicker";
 import { MotionEditor } from "./MotionEditor";
 import { ProductField } from "./ProductField";
 import { ProductPicker } from "./ProductPicker";
+import { SavePresetDialog } from "./SavePresetDialog";
 
 const str = (v: unknown, d = "") => (typeof v === "string" ? v : typeof v === "number" ? String(v) : d);
 const num = (v: unknown, d: number) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -21,9 +22,45 @@ export function Inspector({ workspaceId, projectId }: { workspaceId: string; pro
   const selected = useSelectedLayers();
   return (
     <aside className="ed-side right" data-tour="inspector">
-      {selected.length === 0 ? <SceneInspector workspaceId={workspaceId} /> : selected.length === 1 ? <LayerInspector layer={selected[0]!} workspaceId={workspaceId} projectId={projectId} /> : <MultiInspector count={selected.length} />}
+      {selected.length === 0 ? <SceneInspector workspaceId={workspaceId} /> : selected.length === 1 ? <LayerInspector layer={selected[0]!} workspaceId={workspaceId} projectId={projectId} /> : <MultiInspector layers={selected} workspaceId={workspaceId} />}
       {mode === "advanced" && <LayersPanel />}
     </aside>
+  );
+}
+
+/** "★ Save as preset" button + dialog (AC-008). */
+function SavePresetButton({ workspaceId, config, defaultName, label = "★", title = "Save as preset" }: { workspaceId: string; config: () => PresetConfig; defaultName: string; label?: string; title?: string }) {
+  const upsertLibrary = useEditor((s) => s.upsertLibrary);
+  const [open, setOpen] = useState<PresetConfig | null>(null);
+  return (
+    <>
+      <button className="btn sm" onClick={() => setOpen(config())} title={title}>
+        {label}
+      </button>
+      {open && <SavePresetDialog workspaceId={workspaceId} config={open} defaultName={defaultName} onSaved={upsertLibrary} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+/** Shown when an element came from a library preset that has a newer version (doc 22.3: applied manually). */
+function PresetUpdateNotice({ layer }: { layer: Layer }) {
+  const newer = useEditor((s) => {
+    const ref = layer.preset;
+    if (!ref) return null;
+    const lib = s.library.find((p) => p.id === ref.id);
+    return lib && lib.version > ref.version ? lib : null;
+  });
+  const refreshPreset = useEditor((s) => s.refreshPreset);
+  if (!newer || !layer.preset) return null;
+  return (
+    <div className="alert small row between">
+      <span>
+        “{newer.name}” has a newer look (v{newer.version}, you have v{layer.preset.version}).
+      </span>
+      <button className="btn sm" onClick={() => refreshPreset(layer.id, newer)} title="Takes the new style and motion; your text and position stay">
+        Update
+      </button>
+    </div>
   );
 }
 
@@ -50,9 +87,12 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="stack" style={{ gap: 14 }}>
-      <h3 className="small muted" style={{ margin: 0 }}>
-        SCENE
-      </h3>
+      <div className="row between">
+        <h3 className="small muted" style={{ margin: 0 }}>
+          SCENE
+        </h3>
+        <SavePresetButton workspaceId={workspaceId} config={() => presetFromScene(scene)} defaultName={scene.name} label="★ Save scene as preset" title="Save this scene (background, elements, timing) to your library" />
+      </div>
       <TextField label="Name" value={scene.name} onChange={(name) => updateScene(scene.id, { name })} />
       <NumberField label="Duration" suffix="s" value={scene.end - scene.start} step={0.5} min={0.5} onChange={(d) => setSceneDuration(scene.id, d)} />
       {baseVideo && (
@@ -218,6 +258,7 @@ function LayerInspector({ layer, workspaceId, projectId }: { layer: Layer; works
           {(layer.name ?? layer.type).toUpperCase()}
         </h3>
         <span className="row" style={{ gap: 4 }}>
+          <SavePresetButton workspaceId={workspaceId} config={() => presetFromLayers([layer])} defaultName={layer.name ?? layer.type} />
           <button className="btn sm" onClick={duplicateSelected} title="Duplicate (Ctrl+D)">
             ⧉
           </button>
@@ -226,6 +267,8 @@ function LayerInspector({ layer, workspaceId, projectId }: { layer: Layer; works
           </button>
         </span>
       </div>
+
+      <PresetUpdateNotice layer={layer} />
 
       {device !== "desktop" && (
         <div className={`alert small ${hasOverride ? "" : "muted"}`}>
@@ -560,13 +603,17 @@ function ActionEditor({ layer, scenes, projectId, workspaceId, onChange }: { lay
 
 // ---------------- multi ----------------
 
-function MultiInspector({ count }: { count: number }) {
+function MultiInspector({ layers, workspaceId }: { layers: Layer[]; workspaceId: string }) {
   const { align, distribute, removeSelected, duplicateSelected } = useEditor();
+  const count = layers.length;
   return (
     <div className="stack" style={{ gap: 12 }}>
-      <h3 className="small muted" style={{ margin: 0 }}>
-        {count} ELEMENTS
-      </h3>
+      <div className="row between">
+        <h3 className="small muted" style={{ margin: 0 }}>
+          {count} ELEMENTS
+        </h3>
+        <SavePresetButton workspaceId={workspaceId} config={() => presetFromLayers(layers)} defaultName={`${layers[0]?.name ?? layers[0]?.type ?? "Group"} + ${count - 1}`} label="★ Save group" title="Save these elements together as one preset" />
+      </div>
       <div className="ed-grid2">
         <button className="btn sm" onClick={() => align("left")}>
           Align left

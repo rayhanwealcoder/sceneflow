@@ -1,0 +1,10 @@
+{
+  "id": "webflow",
+  "name": "SceneFlow for Webflow (plain embed)",
+  "version": "0.1.0",
+  "zip": "sceneflow-webflow.zip",
+  "root": ".",
+  "zipRoot": "sceneflow-webflow",
+  "exclude": [],
+  "runtime": { "runtime": ["sceneflow.runtime.min.js"] }
+}

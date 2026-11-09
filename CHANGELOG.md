@@ -1,5 +1,28 @@
 # Changelog
 
+## Phase 7 — Presets, brand kits, connectors (2026-11-09)
+
+### Added
+- **Preset model** (doc §22): one `Preset` shape (`element` | `scene` | `animation` | `template`, scopes `official` | `personal` | `workspace`, `inputs`, `version`, `config`) validated by `presetConfigSchema`; layers and scenes carry `preset: { id, version, part }` so copies remember their origin. Project gains `brand: { kitId, version }` and `fonts.google`. 28 schema tests.
+- **Official presets** (`packages/editor/src/presets.ts`): 9 element presets (headline + subtitle, call to action, sale badge, lower third, price callout, hotspot with tip, product spotlight, logo in the corner, caption bar), 5 scene presets (title card, feature callout, product showcase, testimonial quote, end card), 6 motion presets. Pure apply functions: `applyElementPreset` (fresh ids, action remap, nudge on repeat), `applyScenePreset` (inserted after the current scene, timing re-chained, main-video aware), `applyAnimationPreset`, `projectFromTemplateConfig`; `detectInputs` for smart presets; `outdatedPresets` + `refreshFromPreset` for manual version updates (doc 22.3). 38 editor tests.
+- **Brand kit** (doc 22.4): `brandKitSchema` (primary/secondary/card colours, heading/body fonts from a curated list or custom, logo, button corners/weight/case, card radius, shadow, opt-in Google Fonts). `applyBrandKit()` is the single transform used for templates, new elements (`createLayer(type, init, kit)`) and "Apply brand kit" in the editor; text colours over video are left alone; readable button text is computed from the colour.
+- **Cloud library + brand kits API**: `GET/POST /api/v1/presets`, `PATCH/DELETE /api/v1/presets/:id` (content change = version bump, type cannot change, 256 KB limit, personal presets visible only to their creator), `GET/POST/PATCH/DELETE /api/v1/brand-kits` (first kit is the default, default moves on delete). Migration `0003` (`presets`, `brand_kits`). 14 API tests.
+- **Editor**: Presets panel (Starter + Your library, tabs Elements / Scenes / Motion, live thumbnails painted by the real `Stage`, "Needs your product" hints, rename / replace-with-selection / delete), ★ *Save as preset* on elements, groups and scenes, *Save as template* and *Apply brand kit* in the ⋯ menu, "newer version available → Update" on elements copied from a library preset, "your brand kit changed → Apply new look" bar, tour step for presets, Google-font preview in the canvas. Projects page: **Brand kit** card (set up / edit, logo from the media library, live preview) and *Your templates* in the goal picker; new projects are branded automatically.
+- **Runtime 0.4.0**: `ensureFonts()` loads opted-in Google Fonts; platform-neutral embed `SceneFlow.mount()` with `<script … data-auto>` for `[data-sceneflow-id]` elements (config URL from the element, `data-api`, or the script origin). 28.7 KB gzip. 30 core tests.
+- **Connectors released from this repo**: `connectors/wordpress` (plugin moved here, 0.4.0), `connectors/shopify` (theme app extension: "SceneFlow video" block + Shopify cart adapter, 0.1.0), `connectors/webflow` (plain embed package: script tag + snippet, 0.1.0). `pnpm build:connectors` → `dist/connectors/*.zip` + `manifest.json` (versions, sha256); `pnpm build:wp` builds WordPress only. Each connector has a `connector.json` and a get-started `README.md`.
+- Docs: `docs/getting-started.md` (using SceneFlow + running the repo), handoff spec copied to `docs/`, `CLAUDE.md` working notes, `.gitattributes` (LF).
+- Verified: 120 Node tests, typecheck 10/10, PHP 23 assertions, WPCS clean, Plugin Check "No errors found" (plugin 0.4.0 on development.local), connector zips built and served at `/downloads/`, end-to-end on the running stack (brand kit → branded template → official preset → library preset v1→v2 → outdated refs refreshed → template preset → second project → publish carries fonts/brand/preset refs → runtime 0.4.0 → zips → pages).
+
+### Decisions
+- Presets are copies, never links: a library change only *offers* an update per element; scenes/projects are never rewritten in the background.
+- Official presets take the brand kit on apply (they are generic); user presets do not (they already look the way the user saved them).
+- Google Fonts on published pages are opt-in per brand kit (privacy); the editor always previews them.
+- The plugin fixed a latent gap: the editor canvas now injects the runtime CSS itself (`ensureStyles()`) instead of relying on a Player having mounted first.
+
+### Deferred
+- Shopify connector not exercised on a live store (adapter unit-tested, extension hand-built); Shopify App Store listing.
+- Scene-level "refresh from preset", preset sharing across workspaces (agency phase), preset thumbnails for motions.
+
 ## Phase 6 — Performance + guided onboarding (2026-11-09)
 
 ### Added

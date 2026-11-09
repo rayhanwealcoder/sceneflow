@@ -1,0 +1,10 @@
+{
+  "id": "shopify",
+  "name": "SceneFlow for Shopify",
+  "version": "0.1.0",
+  "zip": "sceneflow-shopify.zip",
+  "root": ".",
+  "zipRoot": "sceneflow-shopify",
+  "exclude": [],
+  "runtime": { "extensions/sceneflow-player/assets": ["sceneflow.runtime.min.js", "sceneflow.shopify.min.js"] }
+}

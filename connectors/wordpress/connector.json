@@ -1,0 +1,10 @@
+{
+  "id": "wordpress",
+  "name": "SceneFlow for WordPress",
+  "zip": "sceneflow-wordpress.zip",
+  "root": "sceneflow",
+  "zipRoot": "sceneflow",
+  "exclude": ["tests"],
+  "runtime": { "sceneflow/assets": ["sceneflow.runtime.min.js", "sceneflow.runtime.js"] },
+  "versionFrom": { "file": "sceneflow/sceneflow.php", "pattern": "Version:\\s*([0-9.]+)" }
+}

@@ -4,7 +4,7 @@ Tags: video, interactive video, shoppable video, woocommerce, gutenberg
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,7 +34,7 @@ Terms of service: https://sceneflow.app/terms — Privacy policy: https://scenef
 
 == Source code ==
 
-The runtime `assets/sceneflow.runtime.min.js` is built from the TypeScript sources in `packages/core` of the SceneFlow repository (https://github.com/sceneflow/sceneflow); a readable build `assets/sceneflow.runtime.js` ships next to it. Build with `pnpm build && pnpm build:wp`.
+The runtime `assets/sceneflow.runtime.min.js` is built from the TypeScript sources in `packages/core` of the SceneFlow repository (https://github.com/rayhanwealcoder/sceneflow); a readable build `assets/sceneflow.runtime.js` ships next to it. Build with `pnpm build && pnpm build:wp`.
 
 == Installation ==
 
@@ -53,6 +53,10 @@ No. Without WooCommerce, product cards and buttons open the product link you set
 Yes. Published configurations are stored in your database and served from your site; only the media files load from SceneFlow's storage.
 
 == Changelog ==
+
+= 0.4.0 =
+* Runtime 0.4.0: brand-kit web fonts (only when the project opts in to Google Fonts), preset-based elements render exactly as designed, generic `data-sceneflow-id` embed support.
+* Published videos may now carry `fonts`, `brand` and `preset` metadata from the SceneFlow editor; the plugin stores them as before.
 
 = 0.3.0 =
 * Runtime picks the right video rendition per device, screen density and connection (data saver gets the small file); scroll-scrub videos use a dedicated seek-friendly MP4.

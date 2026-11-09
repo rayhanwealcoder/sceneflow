@@ -1,4 +1,5 @@
-import { playbackSchema, type Project, type Scene } from "@sceneflow/schema";
+import { playbackSchema, type BrandKit, type Project, type Scene } from "@sceneflow/schema";
+import { applyBrandKit } from "./brand.js";
 import { createLayer } from "./defaults.js";
 import { newId } from "./ids.js";
 
@@ -115,7 +116,8 @@ export function getTemplate(id: string): Template | undefined {
   return TEMPLATES.find((t) => t.id === id);
 }
 
-/** Builds a project document from a template (falls back to blank for unknown ids). */
-export function createProjectFromTemplate(id: string, projectId: string): Project {
-  return (getTemplate(id) ?? TEMPLATES[TEMPLATES.length - 1]!).build(projectId);
+/** Builds a project document from a template (falls back to blank for unknown ids), branded when a kit is given. */
+export function createProjectFromTemplate(id: string, projectId: string, brand?: { kit: BrandKit; ref?: { kitId: string; version: number } } | null): Project {
+  const project = (getTemplate(id) ?? TEMPLATES[TEMPLATES.length - 1]!).build(projectId);
+  return brand ? applyBrandKit(project, brand.kit, brand.ref) : project;
 }

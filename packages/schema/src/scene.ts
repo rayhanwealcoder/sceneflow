@@ -29,6 +29,15 @@ export const animationSpecSchema = z.object({
 });
 export type AnimationSpec = z.infer<typeof animationSpecSchema>;
 export const layerAnimationSchema = z.object({ in: animationSpecSchema.optional(), out: animationSpecSchema.optional() });
+export type LayerAnimation = z.infer<typeof layerAnimationSchema>;
+
+/**
+ * Where a layer/scene was copied from (doc 22.3). Applying a preset creates an independent copy; this
+ * reference only lets the editor say "a newer version of this preset exists". `part` is the index of the
+ * layer inside a multi-element preset.
+ */
+export const presetRefSchema = z.object({ id: z.string().min(1).max(64), version: z.number().int().min(1), part: z.number().int().min(0).optional() });
+export type PresetRef = z.infer<typeof presetRefSchema>;
 
 export const layerSchema = z.object({
   id,
@@ -50,6 +59,7 @@ export const layerSchema = z.object({
   product: productRefSchema.optional(),
   animation: layerAnimationSchema.optional(),
   responsive: z.object({ tablet: layerOverrideSchema.optional(), mobile: layerOverrideSchema.optional() }).optional(),
+  preset: presetRefSchema.optional(),
 });
 
 /**
@@ -91,6 +101,7 @@ export const sceneSchema = z
     background: backgroundSchema,
     layers: z.array(layerSchema).max(200).default([]),
     transition: z.object({ type: z.enum(["none", "fade", "slide", "zoom"]), duration: z.number().min(0).max(5) }).default({ type: "none", duration: 0 }),
+    preset: presetRefSchema.optional(),
   })
   .refine((s) => s.end > s.start, { message: "Scene end must be after start", path: ["end"] });
 

@@ -3,8 +3,8 @@ import type { Product } from "@sceneflow/schema";
 
 /*
  * SaaS -> WordPress connector protocol. The PHP plugin implements the mirror image
- * (wordpress/sceneflow/includes/class-sceneflow-signature.php). Both sides share
- * the fixture in wordpress/sceneflow/tests/fixtures/signature.json.
+ * (connectors/wordpress/sceneflow/includes/class-sceneflow-signature.php). Both sides share
+ * the fixture in connectors/wordpress/sceneflow/tests/fixtures/signature.json.
  *
  * canonical = METHOD \n ROUTE \n TIMESTAMP \n NONCE \n sha256hex(BODY)
  * signature = hex(hmac_sha256(secret, canonical))

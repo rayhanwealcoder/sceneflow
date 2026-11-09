@@ -56,6 +56,10 @@ export const projectSchema = z
       .optional(),
     playback: playbackSchema.default({}),
     scenes: z.array(sceneSchema).max(100),
+    /** Brand kit last applied to this project (doc 22.4); lets the editor offer a re-apply when the kit changes. */
+    brand: z.object({ kitId: z.string().min(1).max(64), version: z.number().int().min(1) }).optional(),
+    /** Web fonts the runtime should load for this project (opt-in from the brand kit). Family names only. */
+    fonts: z.object({ google: z.array(z.string().regex(/^[A-Za-z0-9 ]{2,60}$/)).max(6).default([]) }).optional(),
   })
   .superRefine((p, ctx) => {
     const ids = new Set<string>();

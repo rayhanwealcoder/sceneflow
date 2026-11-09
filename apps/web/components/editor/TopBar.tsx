@@ -7,9 +7,32 @@ import { useEditor } from "@/lib/editorStore";
 
 const DEVICE_LABEL: Record<Device, string> = { desktop: "Desktop", tablet: "Tablet", mobile: "Mobile" };
 
-export function TopBar({ projectId, projectName, onPublish, publishing, onPreviewSite, sizeKb, sizeWarnKb, onTour }: { projectId: string; projectName: string; onPublish: () => void; publishing: boolean; onPreviewSite?: () => void; sizeKb?: number; sizeWarnKb?: number; onTour?: () => void }) {
-  const { history, undo, redo, device, setDevice, mode, setMode, saveState, savedVersion, showSafeArea, toggleSafeArea } = useEditor();
+export function TopBar({
+  projectId,
+  projectName,
+  onPublish,
+  publishing,
+  onPreviewSite,
+  sizeKb,
+  sizeWarnKb,
+  onTour,
+  onSaveTemplate,
+  onApplyBrand,
+}: {
+  projectId: string;
+  projectName: string;
+  onPublish: () => void;
+  publishing: boolean;
+  onPreviewSite?: () => void;
+  sizeKb?: number;
+  sizeWarnKb?: number;
+  onTour?: () => void;
+  onSaveTemplate?: () => void;
+  onApplyBrand?: () => void;
+}) {
+  const { history, undo, redo, device, setDevice, mode, setMode, saveState, savedVersion, showSafeArea, toggleSafeArea, brandKit } = useEditor();
   const heavy = sizeKb !== undefined && sizeWarnKb !== undefined && sizeKb > sizeWarnKb;
+  const closeMenu = (e: React.MouseEvent<HTMLElement>) => e.currentTarget.closest("details")?.removeAttribute("open");
   return (
     <div className="ed-top">
       <Link href={`/projects/${projectId}`} className="btn sm" title="Back to project">
@@ -60,6 +83,39 @@ export function TopBar({ projectId, projectName, onPublish, publishing, onPrevie
           <button className="btn sm" onClick={onTour} title="Show the guided tour again">
             Tour
           </button>
+        )}
+        {(onSaveTemplate || onApplyBrand) && (
+          <details className="ed-menu">
+            <summary className="btn sm" title="More">
+              ⋯
+            </summary>
+            <div className="ed-menu-list">
+              {onApplyBrand && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    closeMenu(e);
+                    onApplyBrand();
+                  }}
+                  title={brandKit ? `Colours, fonts, logo and button style of “${brandKit.name}” on every element` : "Set up a brand kit on the Projects page first"}
+                >
+                  {brandKit ? `Apply brand kit “${brandKit.name}”` : "Apply brand kit (none set up yet)"}
+                </button>
+              )}
+              {onSaveTemplate && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    closeMenu(e);
+                    onSaveTemplate();
+                  }}
+                  title="Reuse this whole video as a starting point for new ones"
+                >
+                  Save as template…
+                </button>
+              )}
+            </div>
+          </details>
         )}
         <Link href={`/projects/${projectId}/preview`} target="_blank" className="btn sm">
           Preview ↗

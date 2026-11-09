@@ -1,8 +1,9 @@
 "use client";
 
 import { create } from "zustand";
-import type { Device, Layer, Project, Scene } from "@sceneflow/schema";
+import type { Device, Layer, Preset, Project, Scene } from "@sceneflow/schema";
 import * as ed from "@sceneflow/editor";
+import type { BrandKitRow, LibraryPreset } from "./types";
 
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 export type EditorMode = "simple" | "advanced";
@@ -20,9 +21,25 @@ interface EditorState {
   saveState: SaveState;
   savedVersion: number | null;
   showSafeArea: boolean;
+  /** Default brand kit of the workspace (new elements and official presets follow it). */
+  brandKit: BrandKitRow | null;
+  /** Presets saved by the user / workspace (official ones are code in @sceneflow/editor). */
+  library: LibraryPreset[];
 }
 
+export type ApplyResult = { ok: true } | { ok: false; message: string };
+
 interface EditorActions {
+  setBrandKit(kit: BrandKitRow | null): void;
+  setLibrary(presets: LibraryPreset[]): void;
+  upsertLibrary(preset: LibraryPreset): void;
+  removeFromLibrary(id: string): void;
+  /** Applies an element / scene / motion preset to the current scene or selection (doc 22.3: always a copy). */
+  applyPreset(preset: Preset): ApplyResult;
+  /** Re-applies the workspace brand kit to every element of the project. */
+  applyBrand(): ApplyResult;
+  /** Pulls the newer look of a library preset into one element. */
+  refreshPreset(layerId: string, preset: Preset): void;
   load(project: Project, savedVersion: number | null): void;
   /** Applies a pure Project -> Project operation with undo history (coalesced while a gesture is active). */
   apply(fn: (p: Project) => Project): void;
@@ -82,6 +99,47 @@ export const useEditor = create<EditorStore>()((set, get) => ({
   saveState: "saved",
   savedVersion: null,
   showSafeArea: false,
+  brandKit: null,
+  library: [],
+
+  setBrandKit: (brandKit) => set({ brandKit }),
+  setLibrary: (library) => set({ library }),
+  upsertLibrary: (preset) => set((s) => ({ library: [preset, ...s.library.filter((p) => p.id !== preset.id)] })),
+  removeFromLibrary: (id) => set((s) => ({ library: s.library.filter((p) => p.id !== id) })),
+
+  applyPreset: (preset) => {
+    const { project, sceneId, selection, brandKit, apply } = get();
+    // Official presets are deliberately generic, so they take the brand; saved presets already look the way the user wants.
+    const brand = preset.scope === "official" ? (brandKit?.config ?? null) : null;
+    switch (preset.config.type) {
+      case "element": {
+        const r = ed.applyElementPreset(project, sceneId, preset, { brand });
+        apply(() => r.project);
+        set({ selection: r.layerIds });
+        return { ok: true };
+      }
+      case "scene": {
+        const r = ed.applyScenePreset(project, sceneId, preset, { brand });
+        apply(() => r.project);
+        set({ sceneId: r.sceneId, selection: [] });
+        return { ok: true };
+      }
+      case "animation": {
+        if (!selection.length) return { ok: false, message: "Select an element on the canvas first, then pick a motion." };
+        apply((p) => ed.applyAnimationPreset(p, sceneId, selection, preset));
+        return { ok: true };
+      }
+      default:
+        return { ok: false, message: "Templates start a new video from the Projects page." };
+    }
+  },
+  applyBrand: () => {
+    const { brandKit, apply } = get();
+    if (!brandKit) return { ok: false, message: "No brand kit yet. Set one up on the Projects page (colours, fonts, logo) and it applies here." };
+    apply((p) => ed.applyBrandKit(p, brandKit.config, { kitId: brandKit.id, version: brandKit.version }));
+    return { ok: true };
+  },
+  refreshPreset: (layerId, preset) => get().apply((p) => ed.refreshFromPreset(p, get().sceneId, layerId, preset)),
 
   load: (project, savedVersion) =>
     set({ loaded: true, history: ed.createHistory(project), project, sceneId: project.scenes[0]!.id, selection: [], saveState: "saved", savedVersion, gesture: { active: false, started: false } }),
@@ -148,8 +206,8 @@ export const useEditor = create<EditorStore>()((set, get) => ({
   setProjectMeta: (patch) => get().apply((p) => ({ ...p, ...patch })),
 
   addLayer: (type, init) => {
-    const { project, sceneId, apply } = get();
-    const r = ed.addLayer(project, sceneId, type, init);
+    const { project, sceneId, apply, brandKit } = get();
+    const r = ed.addLayer(project, sceneId, type, init, brandKit?.config);
     apply(() => r.project);
     set({ selection: [r.layerId] });
   },

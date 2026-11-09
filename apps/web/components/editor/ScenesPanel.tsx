@@ -2,10 +2,11 @@
 
 import { ELEMENT_LABELS, ELEMENT_TYPES } from "@sceneflow/editor";
 import { useEditor } from "@/lib/editorStore";
+import { PresetsPanel } from "./PresetsPanel";
 
 const ICON: Record<string, string> = { text: "T", image: "🖼", button: "▭", product: "🛍", shape: "◆", badge: "●", hotspot: "◎", audio: "♪" };
 
-export function ScenesPanel() {
+export function ScenesPanel({ workspaceId }: { workspaceId: string }) {
   const { project, sceneId, selectScene, addScene, duplicateScene, removeScene, moveScene, addLayer } = useEditor();
   return (
     <aside className="ed-side">
@@ -64,6 +65,8 @@ export function ScenesPanel() {
           Product cards show live price and stock from your shop and add to the cart right from the video. Buttons and hotspots can also add to cart, buy now or apply a coupon.
         </p>
       </div>
+
+      <PresetsPanel workspaceId={workspaceId} />
     </aside>
   );
 }

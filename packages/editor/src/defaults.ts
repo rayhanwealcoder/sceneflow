@@ -1,4 +1,5 @@
-import type { Layer, Scene } from "@sceneflow/schema";
+import type { BrandKit, Layer, Scene } from "@sceneflow/schema";
+import { brandLayer } from "./brand.js";
 import { newId } from "./ids.js";
 
 /** Elements a user can add. "product" is a shoppable card driven by the commerce adapter of the host site. */
@@ -26,8 +27,8 @@ const base = (type: Layer["type"], name: string): Pick<Layer, "id" | "type" | "n
   style: {},
 });
 
-/** Strong defaults so a freshly added element already looks intentional. */
-export function createLayer(type: ElementType, init: Partial<Layer> = {}): Layer {
+/** Strong defaults so a freshly added element already looks intentional; with a brand kit it already matches the brand. */
+export function createLayer(type: ElementType, init: Partial<Layer> = {}, kit?: BrandKit | null): Layer {
   let layer: Layer;
   switch (type) {
     case "text":
@@ -68,6 +69,7 @@ export function createLayer(type: ElementType, init: Partial<Layer> = {}): Layer
       layer = { ...base("audio", "Audio"), frame: { x: 2, y: 2, w: 12, h: 6, rotation: 0 }, content: { volume: 1 }, style: {} };
       break;
   }
+  if (kit) layer = brandLayer(layer, kit);
   return { ...layer, ...init, id: init.id ?? layer.id };
 }
 

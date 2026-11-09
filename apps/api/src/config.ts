@@ -13,8 +13,8 @@ const envSchema = z
     MAX_UPLOAD_MB: z.coerce.number().int().positive().default(2048),
     /** Allow connecting sites on localhost / private networks (needed for LocalWP). Default: on outside production. */
     ALLOW_PRIVATE_SITES: z.enum(["true", "false"]).optional(),
-    /** Folder with the built WordPress plugin zip, served at /downloads/. */
-    WP_PLUGIN_DIST_DIR: z.string().default("../../wordpress/dist"),
+    /** Folder with the built connector zips (pnpm build:connectors), served at /downloads/. */
+    WP_PLUGIN_DIST_DIR: z.string().default("../../dist/connectors"),
   })
   .merge(storageEnvSchema);
 

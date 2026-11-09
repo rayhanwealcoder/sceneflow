@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Stage } from "@sceneflow/core";
+import { ensureStyles, Stage } from "@sceneflow/core";
 import { HANDLES, angleFromCenter, moveFrame, pxToPct, resizeFrame, rotateFrame, snapFrame, type Guide, type Handle } from "@sceneflow/editor";
 import { aspectRatioValue, resolveLayer, type Frame, type Layer, type Project, type Scene } from "@sceneflow/schema";
 import { useEditor, useScene } from "@/lib/editorStore";
@@ -47,6 +47,7 @@ export function Canvas() {
   // Shared runtime renderer in editing mode: what you see is what gets published.
   useEffect(() => {
     if (!hostRef.current) return;
+    ensureStyles();
     const stage = new Stage(hostRef.current, { device, editing: true });
     stageRef.current = stage;
     return () => {
