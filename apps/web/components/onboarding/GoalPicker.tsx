@@ -14,7 +14,7 @@ const ICON: Record<string, string> = { shoppable: "🛍", explainer: "💡", "sc
  * from a template that already works — styled with the workspace brand kit when there is one — and open
  * the editor with the guided tour. Templates the user saved ("Save as template") appear next to ours.
  */
-export function GoalPicker({ workspaceId, compact = false }: { workspaceId: string; compact?: boolean }) {
+export function GoalPicker({ workspaceId, compact = false, clientId = null }: { workspaceId: string; compact?: boolean; /** New videos are filed under this client (agency phase). */ clientId?: string | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function GoalPicker({ workspaceId, compact = false }: { workspaceId: stri
     setBusy(key);
     setError(null);
     try {
-      const { project } = await api<{ project: Project }>("/api/v1/projects", { method: "POST", json: { workspaceId, name } });
+      const { project } = await api<{ project: Project }>("/api/v1/projects", { method: "POST", json: { workspaceId, name, clientId } });
       await api(`/api/v1/projects/${project.id}/draft`, { method: "PUT", json: { config: build(project.id) } });
       router.push(`/projects/${project.id}/editor?tour=1`);
     } catch (err) {

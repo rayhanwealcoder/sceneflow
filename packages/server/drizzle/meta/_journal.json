@@ -36,6 +36,13 @@
       "when": 1794220386385,
       "tag": "0004_big_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794226366627,
+      "tag": "0005_icy_meltdown",
+      "breakpoints": true
     }
   ]
 }

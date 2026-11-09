@@ -100,6 +100,22 @@ await page.click(".list-item >> nth=0");
 await page.waitForURL(`${WEB}/projects/${projectId}`);
 check("projects list → project (client-side)");
 
+await page.goto(`${WEB}/dashboard`);
+await page.waitForSelector("[data-testid=dash-totals]", { timeout: 10000 });
+await page.waitForSelector("[data-testid=dash-group], [data-testid=dash-empty]");
+check("dashboard");
+
+await page.goto(`${WEB}/team`);
+await page.waitForSelector("[data-testid=members]", { timeout: 10000 });
+await page.waitForSelector("[data-testid=create-invite]");
+check("team & clients");
+
+await page.goto(`${WEB}/review/${"0".repeat(64)}`);
+await page.waitForSelector("[data-testid=review-error]");
+await page.goto(`${WEB}/join/${"0".repeat(64)}`);
+await page.waitForSelector("[data-testid=join-card] .alert.error");
+check("review / join pages with an invalid link explain themselves");
+
 await page.goto(`${WEB}/connect?site=${encodeURIComponent("https://example.test")}&code=ABCD1234&name=Example`);
 await page.waitForSelector("text=/connect|Connect/i");
 check("connect page");

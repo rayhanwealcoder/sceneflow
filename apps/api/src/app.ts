@@ -15,7 +15,9 @@ import { mediaRoutes } from "./routes/media.js";
 import { presetRoutes } from "./routes/presets.js";
 import { projectRoutes } from "./routes/projects.js";
 import { publicRoutes } from "./routes/public.js";
+import { reviewRoutes } from "./routes/review.js";
 import { siteRoutes } from "./routes/sites.js";
+import { workspaceRoutes } from "./routes/workspace.js";
 
 export interface BuildDeps {
   /** Inject a fake in tests; defaults to a pg-boss instance on the same database. */
@@ -82,6 +84,8 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   await app.register(presetRoutes, { ctx });
   await app.register(analyticsRoutes, { ctx });
   await app.register(aiRoutes, { ctx });
+  await app.register(workspaceRoutes, { ctx });
+  await app.register(reviewRoutes, { ctx });
   await app.register(publicRoutes, { ctx });
 
   // Built WordPress plugin zip (pnpm build:wp) for the "Download plugin" button.

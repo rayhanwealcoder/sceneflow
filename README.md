@@ -33,7 +33,7 @@ pnpm typecheck
 
 Create the test database once: `psql -U postgres -c "create database sceneflow_test;"`.
 
-End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`.
+End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`; `node scripts/e2e/agency.mjs` runs the agency flow (client review link, approval, invite, comments, dashboard) across three browser contexts.
 
 ## Layout
 
@@ -75,6 +75,10 @@ The runtime sends anonymous, batched playback events (loads, plays, quartiles, s
 ## AI (optional, provider based)
 
 ✨ AI in the editor writes a script + storyboard from a brief and builds the scenes, suggests copy for any element, generates a voiceover per scene and makes captions (shown by the runtime with a CC button). Providers live in `packages/server/src/ai`: Claude through `@anthropic-ai/sdk` (`ANTHROPIC_API_KEY`), ElevenLabs for voices and transcription (`ELEVENLABS_API_KEY`), and no-key fallbacks (starter text, the OS voice) so the flow always works. `GET /api/v1/ai/status` tells the editor what is configured.
+
+## Agency workflow (clients, team, review, dashboard)
+
+Clients group projects (and can carry their own brand kit); team members join through one-time invitation links with a role (viewer / editor / admin); comments in the editor are anchored to scene, moment, element and a point on the canvas and support `@mentions`; the approval workflow (Draft → Internal review → Client review → Approved → Published) gates publishing for editors when a project requires approval; a client reviews and approves through a revocable link without an account (`/review/:token`); the **Dashboard** shows alerts, mentions, every project per client with site health and 7-day numbers, and an activity feed. Routes live in `apps/api/src/routes/workspace.ts` and `review.ts`.
 
 ## Presets and brand kit
 

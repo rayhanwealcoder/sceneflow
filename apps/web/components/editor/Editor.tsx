@@ -6,12 +6,14 @@ import { ensureFonts } from "@sceneflow/core";
 import { googleFamilies, presetFromProject } from "@sceneflow/editor";
 import type { PresetConfig, Project } from "@sceneflow/schema";
 import { api, errorMessage } from "@/lib/api";
+import { useComments } from "@/lib/commentsStore";
 import { useEditor } from "@/lib/editorStore";
 import { usePlayhead } from "@/lib/playhead";
 import { useSession } from "@/lib/session";
-import type { BrandKitRow } from "@/lib/types";
+import type { BrandKitRow, Project as ProjectRow, WorkspaceRole } from "@/lib/types";
 import { AiPanel } from "./AiPanel";
 import { Canvas } from "./Canvas";
+import { CommentsPanel } from "./CommentsPanel";
 import { Inspector } from "./Inspector";
 import { SavePresetDialog } from "./SavePresetDialog";
 import { ScenesPanel } from "./ScenesPanel";
@@ -47,11 +49,35 @@ function tourSteps(project: Project): TourStep[] {
   return steps;
 }
 
-export function Editor({ projectId, projectName, workspaceId, siteId, initialProject, savedVersion }: { projectId: string; projectName: string; workspaceId: string; siteId: string | null; initialProject: Project; savedVersion: number | null }) {
+export function Editor({
+  projectId,
+  projectName,
+  workspaceId,
+  siteId,
+  initialProject,
+  savedVersion,
+  brandKitId = null,
+  role = "editor",
+  review,
+}: {
+  projectId: string;
+  projectName: string;
+  workspaceId: string;
+  siteId: string | null;
+  initialProject: Project;
+  savedVersion: number | null;
+  /** The client's brand kit when the project belongs to a client (falls back to the workspace default). */
+  brandKitId?: string | null;
+  role?: WorkspaceRole;
+  /** Approval state of the project (doc §23) — decides whether Publish is expected to work for this person. */
+  review?: Pick<ProjectRow, "approvalRequired" | "reviewStatus" | "approvedChecksum">;
+}) {
   const store = useEditor();
   const router = useRouter();
   const params = useSearchParams();
   const { user } = useSession();
+  const commentsOpen = useComments((s) => s.open);
+  const openComments = useComments((s) => s.comments.filter((c) => !c.parentId && !c.resolvedAt).length);
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [tourIndex, setTourIndex] = useState<number | null>(null);
@@ -66,15 +92,18 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
     store.load(initialProject, savedVersion);
     usePlayhead.getState().pause();
     usePlayhead.setState({ time: 0 });
+    // Comments belong to this project; ?comments=1 (from the project page / dashboard) opens the panel right away.
+    useComments.setState({ open: params.get("comments") === "1", comments: [], loaded: false, projectId, activeId: null, placing: false, draftAnchor: null, filter: "open" });
+    useComments.getState().load(projectId).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  // Workspace brand kit: new elements and official presets follow it; the editor previews its web fonts.
+  // Brand kit: the client's kit when the project has a client, else the workspace default. New elements and official presets follow it.
   useEffect(() => {
     api<{ kits: BrandKitRow[] }>(`/api/v1/brand-kits?workspaceId=${workspaceId}`)
-      .then((r) => useEditor.getState().setBrandKit(r.kits.find((k) => k.isDefault) ?? r.kits[0] ?? null))
+      .then((r) => useEditor.getState().setBrandKit((brandKitId ? r.kits.find((k) => k.id === brandKitId) : undefined) ?? r.kits.find((k) => k.isDefault) ?? r.kits[0] ?? null))
       .catch(() => useEditor.getState().setBrandKit(null));
-  }, [workspaceId]);
+  }, [workspaceId, brandKitId]);
   const brandKit = store.brandKit;
   const projectFonts = store.project.fonts?.google;
   useEffect(() => {
@@ -233,12 +262,30 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
   };
   // The project follows a kit that changed since it was applied (doc 22.3: offered, never forced).
   const brandStale = !!brandKit && !!project.brand && project.brand.kitId === brandKit.id && project.brand.version < brandKit.version && !brandStaleDismissed;
+  // Editors under an approval workflow: publishing only works for an approved, unchanged draft (the server enforces it; this just says so up front).
+  const admin = role === "admin" || role === "owner";
+  const publishHint = review?.approvalRequired && !admin ? (review.reviewStatus === "approved" && saveState === "saved" && review.approvedChecksum ? null : review.reviewStatus === "approved" ? "Approved, but edited since — send it for approval again, or ask an admin to publish." : "This video needs approval before editors can publish. Send it for review from the project page (Review & approval).") : null;
 
   if (!loaded) return <p className="muted">Loading editor…</p>;
 
   return (
     <div className="ed">
-      <TopBar projectId={projectId} projectName={projectName} onPublish={() => void publish()} publishing={publishing} onPreviewSite={siteId ? () => void previewOnSite() : undefined} sizeKb={sizeKb} sizeWarnKb={SIZE_WARN_KB} onTour={() => setTourIndex(0)} onSaveTemplate={() => setSaveTemplate(presetFromProject(useEditor.getState().project))} onApplyBrand={applyBrand} onAi={() => store.openAi()} />
+      <TopBar
+        projectId={projectId}
+        projectName={projectName}
+        onPublish={() => void publish()}
+        publishing={publishing}
+        onPreviewSite={siteId ? () => void previewOnSite() : undefined}
+        sizeKb={sizeKb}
+        sizeWarnKb={SIZE_WARN_KB}
+        onTour={() => setTourIndex(0)}
+        onSaveTemplate={() => setSaveTemplate(presetFromProject(useEditor.getState().project))}
+        onApplyBrand={applyBrand}
+        onAi={() => store.openAi()}
+        onComments={() => useComments.getState().setOpen(!useComments.getState().open)}
+        openComments={openComments}
+        publishHint={publishHint}
+      />
       {notice && (
         <div className="ed-notice" onClick={() => setNotice(null)}>
           {notice}
@@ -263,6 +310,7 @@ export function Editor({ projectId, projectName, workspaceId, siteId, initialPro
         </div>
         <Inspector workspaceId={workspaceId} projectId={projectId} />
       </div>
+      {commentsOpen && <CommentsPanel projectId={projectId} workspaceId={workspaceId} />}
       {tourIndex !== null && <Tour steps={steps} index={tourIndex} onIndex={setTourIndex} onClose={closeTour} />}
       {store.ai.open && <AiPanel projectId={projectId} workspaceId={workspaceId} onNotice={setNotice} />}
       {saveTemplate && <SavePresetDialog workspaceId={workspaceId} config={saveTemplate} defaultName={projectName} onSaved={(p) => { store.upsertLibrary(p); setNotice(`Template “${p.name}” saved. It appears under “Your templates” when you make a new video.`); }} onClose={() => setSaveTemplate(null)} />}

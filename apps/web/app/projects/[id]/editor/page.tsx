@@ -7,9 +7,9 @@ import { parseProject, type Project as ProjectConfig } from "@sceneflow/schema";
 import { Editor } from "@/components/editor/Editor";
 import { api, errorMessage } from "@/lib/api";
 import { useSession } from "@/lib/session";
-import type { Project } from "@/lib/types";
+import type { ProjectDetail } from "@/lib/types";
 
-type Loaded = { project: Project; config: ProjectConfig; savedVersion: number | null };
+type Loaded = { detail: ProjectDetail; config: ProjectConfig; savedVersion: number | null };
 
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,24 +24,35 @@ export default function EditorPage() {
 
   useEffect(() => {
     if (!user) return;
-    api<{ project: Project; draft: { version: number; config: unknown } | null }>(`/api/v1/projects/${id}`)
-      .then(({ project, draft }) => {
+    api<ProjectDetail>(`/api/v1/projects/${id}`)
+      .then((detail) => {
         let config: ProjectConfig;
-        if (draft) {
-          const parsed = parseProject(draft.config);
+        if (detail.draft) {
+          const parsed = parseProject(detail.draft.config);
           if (!parsed.ok) throw new Error(`Saved project could not be read: ${parsed.message}`);
           config = parsed.project;
-        } else config = createEmptyProject(project.id);
-        setData({ project, config, savedVersion: draft?.version ?? null });
+        } else config = createEmptyProject(detail.project.id);
+        setData({ detail, config, savedVersion: detail.draft?.version ?? null });
       })
       .catch((e) => setError(errorMessage(e)));
   }, [user, id]);
 
   if (error) return <div className="alert error">{error}</div>;
   if (!user || !data) return <p className="muted">Loading editor…</p>;
+  const { project, client, role } = data.detail;
   return (
     <Suspense fallback={<p className="muted">Loading editor…</p>}>
-      <Editor projectId={data.project.id} projectName={data.project.name} workspaceId={data.project.workspaceId} siteId={data.project.siteId} initialProject={data.config} savedVersion={data.savedVersion} />
+      <Editor
+        projectId={project.id}
+        projectName={project.name}
+        workspaceId={project.workspaceId}
+        siteId={project.siteId}
+        initialProject={data.config}
+        savedVersion={data.savedVersion}
+        brandKitId={client?.brandKitId ?? null}
+        role={role}
+        review={{ approvalRequired: project.approvalRequired, reviewStatus: project.reviewStatus, approvedChecksum: project.approvedChecksum }}
+      />
     </Suspense>
   );
 }

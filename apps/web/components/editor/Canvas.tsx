@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { ensureStyles, Stage } from "@sceneflow/core";
 import { HANDLES, angleFromCenter, moveFrame, pxToPct, resizeFrame, rotateFrame, snapFrame, type Guide, type Handle } from "@sceneflow/editor";
 import { aspectRatioValue, cueAt, resolveLayer, type Frame, type Layer, type Project, type Scene } from "@sceneflow/schema";
+import { pinsForScene, useComments } from "@/lib/commentsStore";
 import { useEditor, useScene } from "@/lib/editorStore";
 import { usePlayhead } from "@/lib/playhead";
 
@@ -18,6 +19,8 @@ type Drag =
 export function Canvas() {
   const { project, device, mode, selection, select, beginGesture, endGesture, updateLayerForDevice, showSafeArea } = useEditor();
   const scene = useScene();
+  // Review comments pinned on this scene (doc §23); "placing" = the next click on the stage sets a new pin.
+  const { open: commentsOpen, placing, draftAnchor, comments, activeId, setDraftAnchor, setActive, setOpen: setCommentsOpen } = useComments();
   const wrapRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -180,20 +183,52 @@ export function Canvas() {
     setGuides([]);
   };
 
+  /** "Pin on canvas": one click places the comment's point (elements ignore the pointer while placing, see CSS). */
+  const onOverlayPointerDown = (e: ReactPointerEvent) => {
+    if (!placing) return;
+    e.stopPropagation();
+    const p = pctFromEvent(e);
+    const t = mode === "advanced" ? usePlayhead.getState().time : scene.start;
+    setDraftAnchor({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, sceneId: scene.id, t, layerId: null });
+  };
+  const pins = commentsOpen ? pinsForScene(comments, scene.id) : [];
+
   const bgStyle = backgroundStyle(project, scene);
   const videoSrc = baseSrc ?? clipSrc;
   const poster = bg.type === "video" ? (bg.poster ?? project.video?.poster) : undefined;
 
   return (
-    <div className="ed-canvas" onPointerDown={() => select([])} data-tour="canvas">
+    <div className={`ed-canvas ${placing ? "placing" : ""}`} onPointerDown={() => select([])} data-tour="canvas">
       <div ref={wrapRef} className="ed-stage-wrap" style={{ width: fit.w, height: fit.h }} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         <div className="ed-bg" style={bgStyle.style}>
           {bgStyle.image && <img src={bgStyle.image} alt="" draggable={false} />}
           {videoSrc && <video key={videoSrc} ref={videoRef} src={videoSrc} poster={poster} muted playsInline preload="auto" />}
         </div>
         <div ref={hostRef} className="ed-stage-host" />
-        <div className="ed-overlay">
+        <div className="ed-overlay" onPointerDown={onOverlayPointerDown}>
           {showSafeArea && <div className="ed-safe" />}
+          {pins.map(({ comment, n }) => (
+            <button
+              key={comment.id}
+              type="button"
+              className={`cm-pin ${activeId === comment.id ? "on" : ""} ${comment.resolvedAt ? "resolved" : ""}`}
+              style={{ left: `${comment.x}%`, top: `${comment.y}%` }}
+              title={`${comment.authorName}: ${comment.body}`}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                setActive(comment.id);
+                setCommentsOpen(true);
+              }}
+              data-testid="comment-pin"
+            >
+              <span>{n}</span>
+            </button>
+          ))}
+          {commentsOpen && draftAnchor && draftAnchor.sceneId === scene.id && draftAnchor.x !== null && draftAnchor.x !== undefined && (
+            <span className="cm-pin draft" style={{ left: `${draftAnchor.x}%`, top: `${draftAnchor.y}%` }} title="New comment goes here">
+              <span>+</span>
+            </span>
+          )}
           {scene.layers.map((layer) => {
             const r = resolved.get(layer.id)!;
             if (r.hidden) return null;
@@ -222,6 +257,7 @@ export function Canvas() {
       <div className="ed-canvas-hint muted small">
         {device === "desktop" ? "Desktop layout" : `${device[0]!.toUpperCase()}${device.slice(1)} layout — changes here only affect ${device}`} · drag to move, Shift+drag corner keeps ratio, Alt disables snapping
         {mode === "advanced" ? " · canvas follows the timeline playhead" : ""}
+        {placing ? " · click where the comment belongs" : ""}
       </div>
     </div>
   );

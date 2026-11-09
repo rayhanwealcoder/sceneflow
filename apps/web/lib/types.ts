@@ -49,16 +49,151 @@ export interface Workspace {
   role: "viewer" | "editor" | "admin" | "owner";
 }
 
+export type WorkspaceRole = Workspace["role"];
+
+/** Doc §23: Draft → Internal Review → Client Review → Approved (→ Published is `Project.status`). */
+export type ReviewStatus = "none" | "internal" | "client" | "changes" | "approved";
+
 export interface Project {
   id: string;
   workspaceId: string;
   siteId: string | null;
+  clientId: string | null;
   name: string;
   status: "draft" | "published" | "archived";
   currentDraftVersion: number;
   publishedVersion: number | null;
+  approvalRequired: boolean;
+  reviewStatus: ReviewStatus;
+  reviewVersion: number | null;
+  reviewUpdatedAt: string | null;
+  approvedVersion: number | null;
+  approvedChecksum: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  reviewTokenExpiresAt: string | null;
+  hasReviewLink: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** `GET /api/v1/projects/:id` */
+export interface ProjectDetail {
+  project: Project;
+  role: WorkspaceRole;
+  client: { id: string; name: string; brandKitId: string | null } | null;
+  draft: { version: number; state: "draft" | "published"; checksum: string; config: unknown } | null;
+}
+
+export interface Client {
+  id: string;
+  workspaceId: string;
+  name: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  notes: string | null;
+  brandKitId: string | null;
+  projectCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceMember {
+  userId: string;
+  name: string;
+  email: string;
+  role: WorkspaceRole;
+  joinedAt: string;
+}
+
+export interface WorkspaceDetail {
+  workspace: { id: string; name: string; type: "personal" | "team"; planId: string; ownerId: string };
+  role: WorkspaceRole;
+  members: WorkspaceMember[];
+}
+
+export interface Invite {
+  id: string;
+  role: WorkspaceRole;
+  email: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+/** A review comment, anchored to time / scene / element / a point on the stage (all optional). */
+export interface Comment {
+  id: string;
+  projectId: string;
+  parentId: string | null;
+  authorId: string | null;
+  authorName: string;
+  source: "team" | "client";
+  body: string;
+  t: number | null;
+  sceneId: string | null;
+  layerId: string | null;
+  x: number | null;
+  y: number | null;
+  mentionsJson: string[];
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CommentAnchor = { t?: number | null; sceneId?: string | null; layerId?: string | null; x?: number | null; y?: number | null };
+
+export type ActivityType = "review_requested" | "client_review_requested" | "approved" | "changes_requested" | "review_reset" | "published" | "comment" | "client_comment";
+
+export interface Activity {
+  id: string;
+  projectId: string;
+  projectName: string;
+  type: ActivityType;
+  actorName: string;
+  detail: string | null;
+  createdAt: string;
+}
+
+export interface DashboardAlert {
+  kind: "site_error" | "waiting_client" | "approved_unpublished" | "changes_requested" | "player_errors" | "stale_draft";
+  severity: "warn" | "fail" | "info";
+  projectId?: string;
+  title: string;
+  detail?: string;
+  href: string;
+}
+
+export interface DashboardProject extends Project {
+  clientName: string | null;
+  site: { id: string; name: string | null; url: string; connectionStatus: "pending" | "connected" | "error"; lastError: string | null } | null;
+  draftNewer: boolean;
+  openComments: number;
+  totalComments: number;
+  stats7d: { loads: number; plays: number; clicks: number; addToCarts: number; errors: number };
+}
+
+/** `GET /api/v1/workspaces/:id/dashboard` */
+export interface Dashboard {
+  clients: Array<{ id: string; name: string; projectCount: number }>;
+  projects: DashboardProject[];
+  alerts: DashboardAlert[];
+  mentions: Array<{ id: string; projectId: string; projectName: string; authorName: string; body: string; createdAt: string; t: number | null; sceneId: string | null }>;
+  activity: Activity[];
+  totals: { projects: number; published: number; inReview: number; openComments: number; loads7d: number; plays7d: number; clicks7d: number };
+}
+
+/** `GET /api/v1/review/:token` — what a client sees through a review link. */
+export interface ReviewView {
+  project: { id: string; name: string; clientName: string | null; from: string };
+  status: ReviewStatus;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  canApprove: boolean;
+  version: number | null;
+  config: unknown | null;
+  comments: Comment[];
+  expiresAt: string | null;
 }
 
 export interface MediaRendition {

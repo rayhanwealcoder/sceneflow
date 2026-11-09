@@ -2,16 +2,25 @@ import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { parseProject } from "@sceneflow/schema";
-import { PLACEMENT_MODES, placements, projects, projectVersions, sitePublications, sites } from "@sceneflow/server";
+import { clients, PLACEMENT_MODES, placements, projects, projectVersions, sitePublications, sites } from "@sceneflow/server";
 import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
-import { requireMember, requireUser } from "../lib/auth.js";
+import { logActivity } from "../lib/activity.js";
+import { requireMember, requireUser, roleAtLeast } from "../lib/auth.js";
 import { mediaReadiness, resolvePublishedMedia } from "../lib/media.js";
+import { approvalCurrent, loadProjectWithRole, toProjectDto } from "../lib/review.js";
 import { connectorErrorMessage, connectorSite, loadSite } from "../lib/sites.js";
 import { assertUuid, parseBody } from "../lib/validate.js";
 
-const createSchema = z.object({ workspaceId: z.string().uuid(), name: z.string().trim().min(1).max(120) });
-const patchSchema = z.object({ name: z.string().trim().min(1).max(120).optional(), status: z.enum(["draft", "archived"]).optional(), siteId: z.string().uuid().nullable().optional() });
+const createSchema = z.object({ workspaceId: z.string().uuid(), name: z.string().trim().min(1).max(120), clientId: z.string().uuid().nullable().optional() });
+const patchSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  status: z.enum(["draft", "archived"]).optional(),
+  siteId: z.string().uuid().nullable().optional(),
+  clientId: z.string().uuid().nullable().optional(),
+  /** Doc §23 role-based publish: editors need an approved draft; admins and owners never do. */
+  approvalRequired: z.boolean().optional(),
+});
 const versionSchema = z.object({ config: z.record(z.unknown()) });
 const publishSchema = z.object({ version: z.number().int().min(1).optional() });
 
@@ -42,13 +51,21 @@ async function loadProject(ctx: Ctx, userId: string, id: string, min: "viewer" |
   return project;
 }
 
+/** A client must belong to the project's workspace. */
+async function assertClient(ctx: Ctx, clientId: string, workspaceId: string) {
+  const client = await ctx.db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  if (!client || client.workspaceId !== workspaceId) throw new HttpError(400, "CLIENT_WORKSPACE_MISMATCH", "That client belongs to another workspace");
+  return client;
+}
+
 export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
   app.post("/api/v1/projects", async (req, reply) => {
     const user = await requireUser(ctx, req);
     const body = parseBody(createSchema, req.body);
     await requireMember(ctx, user.id, body.workspaceId, "editor");
-    const [project] = await ctx.db.insert(projects).values({ workspaceId: body.workspaceId, name: body.name }).returning();
-    return reply.code(201).send({ project });
+    if (body.clientId) await assertClient(ctx, body.clientId, body.workspaceId);
+    const [project] = await ctx.db.insert(projects).values({ workspaceId: body.workspaceId, name: body.name, clientId: body.clientId ?? null }).returning();
+    return reply.code(201).send({ project: toProjectDto(project!) });
   });
 
   app.get<{ Querystring: { workspaceId?: string } }>("/api/v1/projects", async (req) => {
@@ -56,17 +73,22 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
     const workspaceId = assertUuid(req.query.workspaceId ?? "", "workspaceId");
     await requireMember(ctx, user.id, workspaceId);
     const rows = await ctx.db.select().from(projects).where(eq(projects.workspaceId, workspaceId)).orderBy(desc(projects.updatedAt));
-    return { projects: rows };
+    return { projects: rows.map(toProjectDto) };
   });
 
   app.get<{ Params: { id: string } }>("/api/v1/projects/:id", async (req) => {
     const user = await requireUser(ctx, req);
-    const project = await loadProject(ctx, user.id, req.params.id);
-    const draft = await ctx.db.query.projectVersions.findFirst({
-      where: eq(projectVersions.projectId, project.id),
-      orderBy: desc(projectVersions.version),
-    });
-    return { project, draft: draft ? { version: draft.version, state: draft.state, checksum: draft.checksum, config: draft.configJson } : null };
+    const { project, role } = await loadProjectWithRole(ctx, user.id, req.params.id);
+    const [draft, client] = await Promise.all([
+      ctx.db.query.projectVersions.findFirst({ where: eq(projectVersions.projectId, project.id), orderBy: desc(projectVersions.version) }),
+      project.clientId ? ctx.db.query.clients.findFirst({ where: eq(clients.id, project.clientId) }) : Promise.resolve(null),
+    ]);
+    return {
+      project: toProjectDto(project),
+      role,
+      client: client ? { id: client.id, name: client.name, brandKitId: client.brandKitId } : null,
+      draft: draft ? { version: draft.version, state: draft.state, checksum: draft.checksum, config: draft.configJson } : null,
+    };
   });
 
   app.patch<{ Params: { id: string } }>("/api/v1/projects/:id", async (req) => {
@@ -77,12 +99,13 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
       const site = await loadSite(ctx, body.siteId);
       if (site.workspaceId !== project.workspaceId) throw new HttpError(400, "SITE_WORKSPACE_MISMATCH", "That site belongs to another workspace");
     }
+    if (body.clientId) await assertClient(ctx, body.clientId, project.workspaceId);
     const [updated] = await ctx.db
       .update(projects)
       .set({ ...body, updatedAt: new Date() })
       .where(eq(projects.id, project.id))
       .returning();
-    return { project: updated };
+    return { project: toProjectDto(updated!) };
   });
 
   /** Saves a new immutable version. The server assigns projectId + version so the client never has to. */
@@ -145,13 +168,21 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
    */
   app.post<{ Params: { id: string } }>("/api/v1/projects/:id/publish", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
     const user = await requireUser(ctx, req);
-    const project = await loadProject(ctx, user.id, req.params.id, "editor");
+    const { project, role } = await loadProjectWithRole(ctx, user.id, req.params.id, "editor");
     const body = parseBody(publishSchema, req.body ?? {});
     const target = body.version ?? project.currentDraftVersion;
     const version = await ctx.db.query.projectVersions.findFirst({
       where: and(eq(projectVersions.projectId, project.id), eq(projectVersions.version, target)),
     });
     if (!version) throw new HttpError(404, "VERSION_NOT_FOUND", "Nothing to publish yet. Save the project first.");
+    // Doc §23 role-based publish permission: with approval on, editors publish only the approved, unchanged draft.
+    if (project.approvalRequired && !roleAtLeast(role, "admin") && !approvalCurrent(project, version.checksum)) {
+      throw new HttpError(
+        409,
+        "APPROVAL_REQUIRED",
+        project.reviewStatus === "approved" ? "The approved version was changed afterwards. Send it for approval again, or ask an admin to publish." : "This video needs approval before it can be published. Send it for review, or ask an admin to publish.",
+      );
+    }
     // Swap the editor proxies for the best renditions available right now (doc 11.2); the version becomes immutable after this.
     const resolved = await resolvePublishedMedia(ctx.db, version.configJson);
     // Published copies know where to report anonymous playback events (doc §24); the editor's own setting can turn it off.
@@ -163,6 +194,7 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
       await tx.update(projectVersions).set({ configJson: resolved, checksum: checksum(resolved), state: "published" }).where(eq(projectVersions.id, version.id));
       await tx.update(projects).set({ publishedVersion: target, status: "published", updatedAt: new Date() }).where(eq(projects.id, project.id));
     });
+    await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "published", actorName: user.name, detail: `v${target}` });
 
     const results: SitePublishResult[] = [];
     if (project.siteId) {
@@ -208,6 +240,9 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
     else if (media.missing) checks.push({ id: "media", status: "warn", title: "A referenced media file no longer exists", detail: "Pick the video/image again in the editor." , fix: { label: "Open editor", href: editor } });
     else checks.push({ id: "media", status: media.hdPending ? "info" : "ok", title: media.hdPending ? "HD versions are being prepared" : "Media ready", detail: media.hdPending ? "Publish now works with the preview quality; publish again later to ship HD." : `${media.ready} file(s) ready.` });
 
+    if (project.approvalRequired && !approvalCurrent(project, latest.checksum)) {
+      checks.push({ id: "approval", status: "info", title: project.reviewStatus === "client" ? "Waiting for the client's approval" : project.reviewStatus === "changes" ? "Changes were requested" : project.reviewStatus === "approved" ? "Edited since it was approved" : "Needs approval before editors can publish", detail: "Admins can always publish. Review status and the client link are on the project page.", fix: { label: "Review & approval", href: `${page}#review` } });
+    }
     if (!project.publishedVersion) checks.push({ id: "published", status: "fail", title: "Not published yet", detail: "Visitors only see published versions.", fix: { label: "Publish", href: page } });
     else if (latest.version !== project.publishedVersion) checks.push({ id: "published", status: "warn", title: `Published v${project.publishedVersion}, but v${latest.version} has newer changes`, detail: "Publish again to make the latest edits live.", fix: { label: "Publish", href: page } });
     else checks.push({ id: "published", status: "ok", title: `Published v${project.publishedVersion}` });

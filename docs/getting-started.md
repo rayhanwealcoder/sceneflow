@@ -66,7 +66,24 @@ In the editor click **✨ AI**:
 
 Everything works without any AI account: you get starter text to edit and the computer's built-in voice. Site owners add `ANTHROPIC_API_KEY` (real scripts and copy, written by Claude) and `ELEVENLABS_API_KEY` (natural voices, captions transcribed from audio) in `apps/api/.env`; the panel's *Setup notes* say exactly what each key adds.
 
-### 8. When something does not work
+### 8. Work with clients and your team
+
+**Clients.** Top bar → **Team & clients** → *Add client*. From then on the Projects page has a filter chip per client, new videos are filed under the selected client, and a client can have its own brand kit (new videos for them start with it). Clients never need an account.
+
+**Review & approval** (project page, step 3):
+
+1. Tick *Require approval before publishing* if you want a gate: editors can then only publish an approved, unchanged draft. Admins and the owner can always publish.
+2. **Send to client** creates a review link. Send it however you like. The client opens it, watches the real player, presses *Add a note on the video* and clicks a spot to leave a note at that moment, then **Approve** or **Request changes**. *New link* replaces it, *Revoke* kills it, links expire after 30 days.
+3. **Send for internal review** asks an admin of your workspace instead; admins see *Approve* / *Request changes…*.
+4. The status chip tells you where things are (Waiting for the client · Changes requested · Approved by … · Approved · edited since). If the draft changes after approval, send it again or let an admin publish.
+
+**Comments.** In the editor press **💬**. Comments from colleagues and from the client's review link are in one list; each one remembers the scene, the moment and the element it is about — click it to jump there. *Pin on canvas* lets you click the exact spot. Use `@Name` to mention a colleague; resolve what is done.
+
+**Team.** Team & clients → *Invite someone*: pick a role, create a link, send it. The link works once, for 7 days, and lands the person in your workspace (they can switch between workspaces in the top bar). Roles: *viewer* sees and comments, *editor* builds and publishes, *admin* also approves, invites and manages clients.
+
+**Dashboard.** Top bar → **Dashboard**: what needs attention (a site that cannot be reached, a client who has not answered for days, something approved but not published, player errors), mentions of you, every project grouped by client with its live version, review state, site health and 7-day loads / plays / clicks, and a feed of who did what.
+
+### 9. When something does not work
 
 Project page → **Something not working?** runs the whole chain for you: draft, media, published version, site reachable, plugin connected, WooCommerce available, pushed version, what the site actually serves, placements. Each line that fails has a button that takes you to the fix.
 
@@ -93,6 +110,7 @@ pnpm build && pnpm dev  # web :3000, api :4800, worker
 | `node scripts/e2e/analytics.mjs` | Real-Chrome visit → events → dashboard summary |
 | `node scripts/e2e/pages.mjs` | Real Chrome walks every page (sign-up → editor → analytics → …) and fails on any page error |
 | `node scripts/e2e/ai.mjs [--record]` | Real Chrome through the UI: AI script → scenes → voiceovers → captions → publish → player; `--record` writes `dist/walkthrough/sceneflow-walkthrough.mp4` |
+| `node scripts/e2e/agency.mjs` | Real Chrome, three browsers: owner adds client + invite → client reviews and approves through the link → publish → dashboard → colleague joins, comments with a pin and a mention |
 
 AI keys are optional (`apps/api/.env.example`, section "AI"): without them the API serves starter text and uses the operating system's voice (Windows / macOS built in; `espeak-ng` on Linux).
 

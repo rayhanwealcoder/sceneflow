@@ -1,5 +1,5 @@
 import { ANALYTICS_EVENTS, PRESET_TYPES, type BrandKit, type PresetConfig, type PresetInput, type Project } from "@sceneflow/schema";
-import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
@@ -78,17 +78,129 @@ export const sitePublications = pgTable(
   (t) => [index("site_publications_project_idx").on(t.projectId, t.createdAt)],
 );
 
+/**
+ * Review workflow of a project (doc §23: Draft → Internal Review → Client Review → Approved → Published).
+ * `none` = plain draft, `changes` = a reviewer asked for changes.
+ */
+export const REVIEW_STATUSES = ["none", "internal", "client", "changes", "approved"] as const;
+export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   siteId: uuid("site_id").references(() => sites.id, { onDelete: "set null" }),
+  /** Agency phase: the customer this video is made for (groups projects on the dashboard; picks the brand kit). */
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   status: text("status", { enum: ["draft", "published", "archived"] }).notNull().default("draft"),
   currentDraftVersion: integer("current_draft_version").notNull().default(0),
   publishedVersion: integer("published_version"),
+  /** When on, editors can only publish an approved, unchanged draft (admins and owners can always publish). */
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  reviewStatus: text("review_status", { enum: REVIEW_STATUSES }).notNull().default("none"),
+  reviewVersion: integer("review_version"),
+  reviewUpdatedAt: timestamp("review_updated_at", { withTimezone: true }),
+  approvedVersion: integer("approved_version"),
+  /** Checksum of the draft that was approved; autosave edits the draft in place, so this is how "changed since approval" is detected. */
+  approvedChecksum: text("approved_checksum"),
+  approvedBy: text("approved_by"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  /** Client review link: sha256 of the token for lookup, the token encrypted so the link can be shown again. */
+  reviewTokenHash: text("review_token_hash"),
+  reviewTokenEncrypted: text("review_token_encrypted"),
+  reviewTokenExpiresAt: timestamp("review_token_expires_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/** Agency clients (doc §23 "client/site/project grouping"): a customer of the workspace. */
+export const clients = pgTable(
+  "clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+    notes: text("notes"),
+    /** Brand kit new videos for this client start from (falls back to the workspace default). */
+    brandKitId: uuid("brand_kit_id").references(() => brandKits.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("clients_workspace_idx").on(t.workspaceId, t.name)],
+);
+
+/** Invitation links for team members (no e-mail sending needed: the admin copies the link). */
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    /** sha256 of the token in the link; the raw token is never stored. */
+    tokenHash: text("token_hash").notNull().unique(),
+    role: text("role", { enum: WORKSPACE_ROLES }).notNull().default("editor"),
+    /** Optional: only this e-mail may accept. */
+    email: text("email"),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("workspace_invites_workspace_idx").on(t.workspaceId, t.createdAt)],
+);
+
+export const COMMENT_SOURCES = ["team", "client"] as const;
+export type CommentSource = (typeof COMMENT_SOURCES)[number];
+
+/**
+ * Review comments (doc §23: frame / scene / time anchored, mentions, resolve / reopen). Team members write
+ * them in the editor; clients through the review link (`source` = client, `author_id` null).
+ */
+export const comments = pgTable(
+  "comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    authorName: text("author_name").notNull(),
+    source: text("source", { enum: COMMENT_SOURCES }).notNull().default("team"),
+    body: text("body").notNull(),
+    /** Anchor: project time in seconds, scene, element, and a point on the stage in percent. All optional. */
+    t: doublePrecision("t"),
+    sceneId: text("scene_id"),
+    layerId: text("layer_id"),
+    x: doublePrecision("x"),
+    y: doublePrecision("y"),
+    /** User ids mentioned with @Name. */
+    mentionsJson: jsonb("mentions_json").$type<string[]>().notNull().default([]),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: text("resolved_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("comments_project_idx").on(t.projectId, t.createdAt)],
+);
+
+export const ACTIVITY_TYPES = ["review_requested", "client_review_requested", "approved", "changes_requested", "review_reset", "published", "comment", "client_comment"] as const;
+export type ActivityType = (typeof ACTIVITY_TYPES)[number];
+
+/** What happened on which project — the agency dashboard's feed and the source of its alerts. */
+export const projectActivity = pgTable(
+  "project_activity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    type: text("type", { enum: ACTIVITY_TYPES }).notNull(),
+    actorName: text("actor_name").notNull(),
+    detail: text("detail"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("project_activity_workspace_idx").on(t.workspaceId, t.createdAt)],
+);
 
 export const projectVersions = pgTable(
   "project_versions",

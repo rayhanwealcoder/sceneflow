@@ -19,6 +19,9 @@ export function TopBar({
   onSaveTemplate,
   onApplyBrand,
   onAi,
+  onComments,
+  openComments = 0,
+  publishHint,
 }: {
   projectId: string;
   projectName: string;
@@ -31,6 +34,10 @@ export function TopBar({
   onSaveTemplate?: () => void;
   onApplyBrand?: () => void;
   onAi?: () => void;
+  onComments?: () => void;
+  openComments?: number;
+  /** Why publishing is not possible right now (approval workflow); the button stays clickable so the server explains too. */
+  publishHint?: string | null;
 }) {
   const { history, undo, redo, device, setDevice, mode, setMode, saveState, savedVersion, showSafeArea, toggleSafeArea, brandKit } = useEditor();
   const heavy = sizeKb !== undefined && sizeWarnKb !== undefined && sizeKb > sizeWarnKb;
@@ -86,6 +93,11 @@ export function TopBar({
             ✨ AI
           </button>
         )}
+        {onComments && (
+          <button className="btn sm cm-btn" onClick={onComments} title="Comments from your team and your client" data-testid="comments-open">
+            💬{openComments > 0 && <span className="cm-count">{openComments}</span>}
+          </button>
+        )}
         {onTour && (
           <button className="btn sm" onClick={onTour} title="Show the guided tour again">
             Tour
@@ -132,8 +144,8 @@ export function TopBar({
             Preview on site ↗
           </button>
         )}
-        <button className="btn sm primary" onClick={onPublish} disabled={publishing} data-tour="publish">
-          {publishing ? "Publishing…" : "Publish"}
+        <button className={`btn sm ${publishHint ? "" : "primary"}`} onClick={onPublish} disabled={publishing} data-tour="publish" title={publishHint ?? "Make this version live on your site"}>
+          {publishing ? "Publishing…" : publishHint ? "Publish (needs approval)" : "Publish"}
         </button>
       </div>
     </div>

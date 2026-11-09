@@ -19,8 +19,9 @@ function safeNext(next: string | null): string {
 }
 
 function LoginForm() {
-  const next = safeNext(useSearchParams().get("next"));
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const search = useSearchParams();
+  const next = safeNext(search.get("next"));
+  const [mode, setMode] = useState<"signin" | "signup">(search.get("mode") === "signup" ? "signup" : "signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
