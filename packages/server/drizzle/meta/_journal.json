@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794202165878,
+      "tag": "0000_natural_wildside",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794208169445,
+      "tag": "0001_blue_smiling_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794213240336,
+      "tag": "0002_flaky_praxagora",
+      "breakpoints": true
+    }
+  ]
+}

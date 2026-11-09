@@ -1,0 +1,13 @@
+node_modules
+dist
+.turbo
+.env
+*.log
+/data
+.next
+next-env.d.ts
+*.tsbuildinfo
+/wordpress/dist
+/wordpress/sceneflow/assets/sceneflow.runtime.min.js
+/wordpress/sceneflow/assets/sceneflow.runtime.js
+/wordpress/sceneflow/tests/fixtures

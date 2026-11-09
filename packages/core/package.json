@@ -1,0 +1,21 @@
+{
+  "name": "@sceneflow/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./runtime": "./dist/sceneflow.runtime.min.js",
+    "./runtime/shopify": "./dist/sceneflow.shopify.min.js",
+    "./shopify": { "types": "./dist/shopify.d.ts", "default": "./dist/shopify.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/bundle.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": { "@sceneflow/schema": "workspace:*" },
+  "devDependencies": { "esbuild": "^0.24.0", "jsdom": "^25.0.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
+}
