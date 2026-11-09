@@ -21,7 +21,18 @@ class SceneFlow_Admin {
 		add_action( 'admin_post_sceneflow_pairing', array( $this, 'handle_pairing' ) );
 		add_action( 'admin_post_sceneflow_disconnect', array( $this, 'handle_disconnect' ) );
 		add_action( 'admin_post_sceneflow_app_url', array( $this, 'handle_app_url' ) );
+		add_action( 'admin_post_sceneflow_analytics', array( $this, 'handle_analytics' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( SCENEFLOW_FILE ), array( $this, 'action_links' ) );
+	}
+
+	/**
+	 * Turns anonymous playback analytics on or off for players on this site.
+	 */
+	public function handle_analytics() {
+		$this->guard( 'sceneflow_analytics' );
+		SceneFlow_Settings::save_analytics( ! empty( $_POST['sceneflow_analytics'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in guard().
+		wp_safe_redirect( admin_url( 'options-general.php?page=sceneflow&saved=1' ) );
+		exit;
 	}
 
 	/**
@@ -235,6 +246,16 @@ class SceneFlow_Admin {
 					<input type="url" class="regular-text" id="sceneflow_app_url" name="sceneflow_app_url" value="<?php echo esc_attr( (string) get_option( SceneFlow_Settings::APP_URL_OPTION, '' ) ); ?>" placeholder="<?php echo esc_attr( SCENEFLOW_APP_URL ); ?>">
 					<?php submit_button( __( 'Save', 'sceneflow' ), 'secondary', 'submit', false ); ?>
 					<p class="description"><?php esc_html_e( 'Only for self-hosted or staging SceneFlow installs. Leave empty to use the default.', 'sceneflow' ); ?></p>
+				</form>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:16px">
+					<input type="hidden" name="action" value="sceneflow_analytics">
+					<?php wp_nonce_field( 'sceneflow_analytics' ); ?>
+					<label>
+						<input type="checkbox" name="sceneflow_analytics" value="1" <?php checked( SceneFlow_Settings::analytics_enabled() ); ?>>
+						<?php esc_html_e( 'Send anonymous playback analytics to SceneFlow (loads, plays, clicks — no cookies, no IP addresses, honours Do Not Track)', 'sceneflow' ); ?>
+					</label>
+					<?php submit_button( __( 'Save', 'sceneflow' ), 'secondary', 'submit', false ); ?>
+					<p class="description"><?php esc_html_e( 'Powers the Analytics page of each video in SceneFlow. Turn it off if your privacy policy does not cover it.', 'sceneflow' ); ?></p>
 				</form>
 			</details>
 		</div>

@@ -1,13 +1,13 @@
 # SceneFlow — working notes for Claude Code
 
-- Spec: `docs/SceneFlow_AI_Implementation_Handoff_v1.0.md` (source of truth). Work goes **phase by phase**; after each phase update `CHANGELOG.md` + `docs/architecture.md`, then tell the user what was built, how to try it, and what is next. Phases done: 1–7.
+- Spec: `docs/SceneFlow_AI_Implementation_Handoff_v1.0.md` (source of truth). Work goes **phase by phase**; after each phase update `CHANGELOG.md` + `docs/architecture.md`, then tell the user what was built, how to try it, and what is next. Phases done: 1–8 (next: 9 AI, 10 Agency).
 - The user writes Banglish (Bengali in Latin letters); reply in Banglish. Keep end-user UX simple — no learning curve, guided (tour, goal picker, diagnostics).
 - Everything lives in this repo: https://github.com/rayhanwealcoder/sceneflow (branch `main`). Commit/push only when the user asks ("git add koro" / "push koro").
 - **No Docker, no Redis, never WAMP.** Local Postgres 17; queue is pg-boss. WordPress testing uses the LocalWP site **`development.local`** (WP-CLI via LocalWP's PHP, see below).
 - Connectors are released from here as zips: `pnpm build:connectors` → `dist/connectors/*.zip` + `manifest.json`. **"wp build"** from the user means: `pnpm build && pnpm build:wp`, then hand over `dist/connectors/sceneflow-wordpress.zip`. New platform = new folder under `connectors/` with `connector.json` + get-started `README.md`.
 - Keep both placement methods in WordPress: `[sceneflow id="…"]` shortcode/block **and** element-pick placements.
 - WordPress plugin must stay WordPress.org-clean: `phpcs --standard=WordPress --extensions=php --ignore="*/tests/*" connectors/wordpress/sceneflow` and `wp plugin check sceneflow` (Plugin Check plugin on development.local) before calling a phase done. Plugin tests: `pnpm test:wp` (needs the fixture from `pnpm --filter @sceneflow/server test`).
-- Verify before reporting: `pnpm typecheck`, `pnpm test` (needs DB `sceneflow_test`), `pnpm build`, PHP tests + phpcs + Plugin Check, and an end-to-end script against the running stack (`scripts/smoke.mjs` or a phase-specific one).
+- Verify before reporting: `pnpm typecheck`, `pnpm test` (needs DB `sceneflow_test`), `pnpm build`, PHP tests + phpcs + Plugin Check, and an end-to-end script against the running stack (`scripts/smoke.mjs` or a phase-specific one in `scripts/e2e/`). Browser-level checks use `playwright-core` with the installed Chrome (`channel: "chrome"`, never download browsers): `scripts/e2e/scroll-smoothness.mjs`, `scripts/e2e/analytics.mjs`. "Properly test with dummy content" = generate a clip with FFmpeg (`testsrc2`), run it through the real pipeline, measure in Chrome.
 
 ## Local tooling (this machine)
 

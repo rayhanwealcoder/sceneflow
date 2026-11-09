@@ -43,6 +43,8 @@ class SceneFlow_Frontend {
 			$deps[] = 'sceneflow-woocommerce';
 		}
 		wp_register_script( 'sceneflow-init', SCENEFLOW_URL . 'assets/sceneflow-init.js', $deps, SCENEFLOW_VERSION, $args );
+		// Site-level switches the init script passes to every player (analytics opt-out).
+		wp_add_inline_script( 'sceneflow-init', 'window.SceneFlowSettings = ' . wp_json_encode( array( 'analytics' => SceneFlow_Settings::analytics_enabled() ) ) . ';', 'before' );
 	}
 
 	/**

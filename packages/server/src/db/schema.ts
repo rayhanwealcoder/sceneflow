@@ -1,4 +1,4 @@
-import { PRESET_TYPES, type BrandKit, type PresetConfig, type PresetInput, type Project } from "@sceneflow/schema";
+import { ANALYTICS_EVENTS, PRESET_TYPES, type BrandKit, type PresetConfig, type PresetInput, type Project } from "@sceneflow/schema";
 import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -188,6 +188,33 @@ export const brandKits = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("brand_kits_workspace_idx").on(t.workspaceId, t.updatedAt)],
+);
+
+/**
+ * Anonymous playback events (doc §24). `id` is the client's event uuid, so re-sent batches are harmless.
+ * No IP addresses or personal data are stored; `session_id` is a random per-tab id.
+ */
+export const analyticsEvents = pgTable(
+  "analytics_events",
+  {
+    id: text("id").primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    version: integer("version"),
+    sessionId: text("session_id").notNull(),
+    type: text("type", { enum: ANALYTICS_EVENTS }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Player time in seconds. */
+    t: doublePrecision("t"),
+    sceneId: text("scene_id"),
+    layerId: text("layer_id"),
+    productId: text("product_id"),
+    host: text("host"),
+    path: text("path"),
+    device: text("device"),
+    payloadJson: jsonb("payload_json").$type<Record<string, string | number | boolean>>().notNull().default({}),
+  },
+  (t) => [index("analytics_events_project_time_idx").on(t.projectId, t.occurredAt), index("analytics_events_project_type_idx").on(t.projectId, t.type, t.occurredAt)],
 );
 
 export const MEDIA_TYPES = ["video", "image", "audio"] as const;

@@ -48,6 +48,20 @@ export function scrollProgress(i: ProgressInput): number {
   return applyOffsets(clamp01(raw), i.startOffset, i.endOffset);
 }
 
+/** Half a frame at 60 fps: closer than this is "already there". */
+export const SEEK_EPS = 1 / 60;
+
+/**
+ * Seek coalescing. Browsers cancel an in-flight seek when `currentTime` is set again, and a cancelled seek
+ * never paints a frame — setting it on every scroll event therefore shows *fewer* frames, not more. Rule:
+ * at most one seek in flight; while one is pending remember only the latest wanted time and apply it on
+ * `seeked`. Returns the time to assign now, or null to wait.
+ */
+export function nextSeek(video: { currentTime: number; seeking: boolean; readyState: number }, wanted: number, eps = SEEK_EPS): number | null {
+  if (!Number.isFinite(wanted) || video.readyState < 1 || video.seeking) return null;
+  return Math.abs(video.currentTime - wanted) > eps ? wanted : null;
+}
+
 /** One smoothing step: how far `current` moves toward `target` this frame. smoothness 0 = snap. */
 export function smoothStep(current: number, target: number, smoothness: number, dtMs: number): number {
   if (smoothness <= 0) return target;

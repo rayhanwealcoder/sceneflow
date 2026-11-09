@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyOffsets, parseDistance, scrollProgress, smoothStep } from "./scroll.js";
+import { applyOffsets, nextSeek, parseDistance, scrollProgress, smoothStep } from "./scroll.js";
 
 describe("scroll math", () => {
   it("parses distances", () => {
@@ -30,6 +30,16 @@ describe("scroll math", () => {
     expect(applyOffsets(0.1, 0.1, 0.1)).toBe(0);
     expect(applyOffsets(0.5, 0.1, 0.1)).toBe(0.5);
     expect(applyOffsets(0.95, 0.1, 0.1)).toBe(1);
+  });
+
+  it("coalesces seeks: never while one is in flight, never before metadata, never for sub-frame moves", () => {
+    expect(nextSeek({ currentTime: 1, seeking: false, readyState: 4 }, 2)).toBe(2);
+    expect(nextSeek({ currentTime: 1, seeking: true, readyState: 4 }, 2)).toBeNull();
+    expect(nextSeek({ currentTime: 1, seeking: false, readyState: 0 }, 2)).toBeNull();
+    expect(nextSeek({ currentTime: 1, seeking: false, readyState: 4 }, 1.01)).toBeNull();
+    expect(nextSeek({ currentTime: 1, seeking: false, readyState: 4 }, NaN)).toBeNull();
+    // Reverse scrubbing is just another target.
+    expect(nextSeek({ currentTime: 5, seeking: false, readyState: 4 }, 0.5)).toBe(0.5);
   });
 
   it("smoothing converges and snaps when disabled", () => {

@@ -12,6 +12,7 @@ global $wpdb;
 delete_option( 'sceneflow_connection' );
 delete_option( 'sceneflow_db_version' );
 delete_option( 'sceneflow_app_url' );
+delete_option( 'sceneflow_analytics' );
 delete_transient( 'sceneflow_pairing' );
 delete_transient( 'sceneflow_pairing_attempts' );
 

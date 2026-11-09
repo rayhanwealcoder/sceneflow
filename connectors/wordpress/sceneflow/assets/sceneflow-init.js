@@ -10,9 +10,12 @@
 		Array.prototype.forEach.call( nodes, function ( node ) {
 			node.setAttribute( 'data-sceneflow-ready', '1' );
 			/* Commerce goes through the global registry (SceneFlow.commerce): the WooCommerce adapter registers itself when WooCommerce is active. */
+			var settings = window.SceneFlowSettings || {};
 			var player = new window.SceneFlow.Player( {
 				target: node,
 				configUrl: node.getAttribute( 'data-sceneflow-config' ),
+				/* Anonymous playback analytics; off when the site owner disabled it in Settings → SceneFlow. */
+				analytics: false !== settings.analytics,
 			} );
 			player.init();
 			node.sceneflowPlayer = player;

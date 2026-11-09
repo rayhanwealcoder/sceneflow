@@ -33,7 +33,7 @@ pnpm typecheck
 
 Create the test database once: `psql -U postgres -c "create database sceneflow_test;"`.
 
-End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site).
+End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Two of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary.
 
 ## Layout
 
@@ -67,6 +67,10 @@ Each connector folder has a `connector.json` and a get-started `README.md`; see 
 - **WooCommerce**: connect the site, pick products in the editor, the player adds to the real cart (Store API). Nothing to configure.
 - **No WooCommerce**: use “My products” (name, price, image, link) — product cards open the link (payment link, Gumroad, any store).
 - **Shopify / custom**: register a runtime adapter on the page: `SceneFlow.commerce.register(SceneFlow.createShopifyAdapter())` (the Shopify connector does this) or your own object implementing `addToCart` (see `packages/core/src/commerce.ts`).
+
+## Analytics
+
+The runtime sends anonymous, batched playback events (loads, plays, quartiles, scene changes, clicks, add-to-carts, watched ranges) to `POST /api/v1/analytics/events`; the project page's **Analytics** view shows totals, loads vs plays per day, an engagement timeline, a funnel and per-element / scene / product / page tables. No cookies, no IP addresses, Do Not Track respected; WordPress sites can switch it off in Settings → SceneFlow. Need footage? `docs/ai-video-prompts.md` has prompts for AI video tools tuned for overlays and scroll-scrub.
 
 ## Presets and brand kit
 

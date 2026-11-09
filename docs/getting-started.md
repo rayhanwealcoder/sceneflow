@@ -47,7 +47,15 @@ In the editor the left panel has **Presets**:
 
 **Webflow and any other site** — add one script tag in the site's footer code and a `<div data-sceneflow-id="…">` where the video goes (see `connectors/webflow/README.md`).
 
-### 5. When something does not work
+### 5. See how it performs
+
+Project page → **Analytics**: loads, plays, completion, average watch time, clicks, add-to-carts; loads vs plays per day; an **engagement timeline** that shows where viewers drop off (with your scene names along the bottom); a funnel; per-element, per-scene, per-product and per-page tables. Everything is anonymous (no cookies, no IP addresses) and visitors with Do Not Track are never counted. WordPress site owners can switch it off under Settings → SceneFlow → Advanced.
+
+### 6. No footage? Make a clip with AI
+
+A 6–10 s AI clip is plenty. Ask for one slow continuous camera move, no cuts, no text, subject on the left. Ready prompts for Veo, Sora, Runway and Kling are in [docs/ai-video-prompts.md](ai-video-prompts.md) and under the upload box in the app.
+
+### 7. When something does not work
 
 Project page → **Something not working?** runs the whole chain for you: draft, media, published version, site reachable, plugin connected, WooCommerce available, pushed version, what the site actually serves, placements. Each line that fails has a button that takes you to the fix.
 
@@ -70,6 +78,8 @@ pnpm build && pnpm dev  # web :3000, api :4800, worker
 | `pnpm build:wp` | WordPress plugin only (`sceneflow-wordpress.zip`, served by the API at `/downloads/`) |
 | `pnpm test:wp` | Plain-PHP plugin tests (signature fixture shared with the Node tests) |
 | `pnpm smoke` | End-to-end check against a running stack |
+| `node scripts/e2e/scroll-smoothness.mjs` | Real-Chrome scroll-scrub measurement with a generated clip (frame update rate, seek latency) |
+| `node scripts/e2e/analytics.mjs` | Real-Chrome visit → events → dashboard summary |
 
 Local WordPress testing uses a LocalWP site; point the plugin at the local app with `wp option update sceneflow_app_url http://localhost:3000`.
 

@@ -1,9 +1,10 @@
-import { aspectRatioValue, isLayerVisibleAt, parseProject, sceneAt, type Action, type Device, type Layer, type Product, type ProductRef, type Project, type Scene, type VideoSource } from "@sceneflow/schema";
+import { aspectRatioValue, deviceFromWidth, isLayerVisibleAt, parseProject, sceneAt, type Action, type Device, type Layer, type Product, type ProductRef, type Project, type Scene, type VideoSource } from "@sceneflow/schema";
 import { commerce, linkAdapter, type CartLine, type CommerceAdapter, type CommerceResult } from "./commerce.js";
 import { Emitter, type EventMap } from "./emitter.js";
-import { parseDistance, scrollProgress, smoothStep } from "./scroll.js";
+import { Analytics, analyticsAllowed } from "./analytics.js";
+import { nextSeek, parseDistance, scrollProgress, smoothStep } from "./scroll.js";
 import { browserProfile, pickSource } from "./sources.js";
-import { Stage } from "./stage.js";
+import { REF_WIDTH, Stage } from "./stage.js";
 import { ensureFonts, ensureStyles } from "./styles.js";
 
 export interface PlayerOptions {
@@ -20,6 +21,11 @@ export interface PlayerOptions {
   commerce?: CommerceAdapter;
   /** Intercept any action. Return true to mark it handled (built-in behaviour is skipped). */
   onAction?: (action: Action, layer: Layer) => boolean | void;
+  /**
+   * Anonymous playback analytics (doc §24). Default: on when the published config names an endpoint and the
+   * visitor has not set Do Not Track. `false` turns it off; an object overrides the endpoint / session id.
+   */
+  analytics?: boolean | { endpoint?: string; sessionId?: string };
 }
 
 export type PlayerState = "idle" | "loading" | "ready" | "playing" | "paused" | "ended" | "destroyed" | "error";
@@ -57,6 +63,11 @@ export class Player {
   private scrollTarget = 0;
   private scrollRaf = 0;
   private scrollLastTs = 0;
+  /** Latest media time a scrub asked for; applied when the in-flight seek lands (see `nextSeek`). */
+  private seekWanted = NaN;
+  private seekBound = new WeakSet<HTMLVideoElement>();
+  /** Object URL of a fully downloaded scrub file (scroll mode), revoked on destroy. */
+  private blobUrl: string | null = null;
   // commerce
   private products = new Map<string, Promise<Product | null>>();
   private hydratedScenes = new Set<string>();
@@ -64,6 +75,10 @@ export class Player {
   private toastTimer = 0;
   // media
   private prefetched = new Set<string>();
+  // analytics
+  private analytics: Analytics | null = null;
+  private quartilesSeen = new Set<number>();
+  private impressed = new Set<string>();
 
   constructor(private readonly options: PlayerOptions) {}
 
@@ -93,6 +108,8 @@ export class Player {
     this.project = parsed.project;
     this.mode = this.project.video ? "base" : "scenes";
     this.effective = this.resolveMode(this.project);
+    this.startAnalytics(this.project, target);
+    this.analytics?.track("player_loaded", { payload: { mode: this.effective } });
     this.mount();
     this.state = "ready";
     this.emitter.emit("ready", undefined);
@@ -100,6 +117,17 @@ export class Player {
     if (this.effective === "poster") return;
     if (this.options.lazy === false || typeof IntersectionObserver === "undefined") this.mountMedia();
     else this.observeViewport();
+  }
+
+  /** Doc §24 + §25: consent-aware, off by option, off without an endpoint, off under Do Not Track. */
+  private startAnalytics(p: Project, target: HTMLElement): void {
+    const opt = this.options.analytics;
+    if (opt === false || !analyticsAllowed()) return;
+    const endpoint = (typeof opt === "object" ? opt.endpoint : undefined) ?? (p.analytics?.enabled === false ? undefined : p.analytics?.endpoint);
+    if (!endpoint) return;
+    // Visitor's device class (viewport), not the player's responsive layout — a 900 px player on a desktop is still "desktop".
+    const device = this.options.device && this.options.device !== "auto" ? this.options.device : deviceFromWidth((typeof window !== "undefined" && window.innerWidth) || target.clientWidth || REF_WIDTH);
+    this.analytics = new Analytics({ endpoint, projectId: p.projectId, version: p.version, device, sessionId: typeof opt === "object" ? opt.sessionId : undefined });
   }
 
   /** Applies mobile + reduced-motion fallbacks (doc 9.1). */
@@ -165,6 +193,7 @@ export class Player {
       this.stage.render(project, first.id, 0);
       this.hydrateScene(first);
       this.prefetchAdjacent(first);
+      this.sceneAnalytics(null, first, 0);
     }
 
     const m = this.effective;
@@ -216,12 +245,14 @@ export class Player {
     const p = this.project;
     const scroll = this.effective === "scroll";
     if (this.mode === "base" && p.video) {
-      const v = this.createVideo(this.pickFor(p.video.sources, p.video.src), p.video.poster);
+      const src = this.pickFor(p.video.sources, p.video.src);
+      const v = this.createVideo(src, p.video.poster);
       v.controls = scroll ? false : p.playback.controls;
       v.loop = this.effective === "loop";
       if (scroll) {
         v.preload = "auto";
         v.muted = true;
+        void this.upgradeToBlob(v, src, p.video.sources?.find((s) => s.src === src)?.sizeBytes);
       }
       v.addEventListener("timeupdate", () => !scroll && this.onTime(v.currentTime));
       v.addEventListener("play", () => !scroll && this.setState("playing"));
@@ -296,13 +327,15 @@ export class Player {
       this.mediaEl.appendChild(img);
     } else if (bg.type === "video") {
       if (withMedia && bg.src) {
-        const v = this.createVideo(this.pickFor(bg.sources, bg.src), bg.poster);
+        const src = this.pickFor(bg.sources, bg.src);
+        const v = this.createVideo(src, bg.poster);
         if (this.effective === "scroll") {
           v.preload = "auto";
           v.muted = true;
+          void this.upgradeToBlob(v, src, bg.sources?.find((s) => s.src === src)?.sizeBytes);
         }
         v.addEventListener("loadedmetadata", () => {
-          v.currentTime = bg.sourceStart + Math.max(0, this.time - scene.start);
+          this.requestSeek(v, bg.sourceStart + Math.max(0, this.time - scene.start));
         });
         this.mediaEl.appendChild(v);
         this.video = v;
@@ -341,7 +374,7 @@ export class Player {
     if (!this.project || !Number.isFinite(time)) return;
     const t = Math.max(0, time);
     if (this.mode === "base") {
-      if (this.video && Math.abs(this.video.currentTime - t) > 0.01) this.video.currentTime = t;
+      if (this.video) this.requestSeek(this.video, t);
       this.onTime(t);
       return;
     }
@@ -349,12 +382,88 @@ export class Player {
     const scene = sceneAt(this.project.scenes, t) ?? this.project.scenes[0] ?? null;
     if (scene) {
       this.enterScene(scene);
-      if (this.video && scene.background.type === "video") {
-        const want = scene.background.sourceStart + (t - scene.start);
-        if (Math.abs(this.video.currentTime - want) > 0.01) this.video.currentTime = want;
-      }
+      if (this.video && scene.background.type === "video") this.requestSeek(this.video, scene.background.sourceStart + (t - scene.start));
     }
     this.renderTime(t);
+  }
+
+  /**
+   * Coalesced seek (see `nextSeek` in scroll.ts): one in-flight seek at a time, the newest wanted time wins.
+   * This is what makes scrubbing paint a frame on (almost) every animation frame instead of cancelling itself.
+   */
+  private requestSeek(v: HTMLVideoElement, t: number): void {
+    this.seekWanted = t;
+    if (!this.seekBound.has(v)) {
+      this.seekBound.add(v);
+      const flush = () => {
+        if (this.video !== v) return;
+        const next = nextSeek(v, this.seekWanted);
+        if (next !== null) v.currentTime = next;
+      };
+      v.addEventListener("seeked", flush);
+      v.addEventListener("loadedmetadata", flush);
+    }
+    const next = nextSeek(v, t);
+    if (next !== null) v.currentTime = next;
+  }
+
+  /** Files above this are streamed as usual (range requests) instead of being downloaded whole. */
+  private static readonly BLOB_MAX = 40 * 1024 * 1024;
+
+  /** Read through a method so TypeScript does not narrow `state` across the awaits above. */
+  private isDestroyed(): boolean {
+    return (this.state as PlayerState) === "destroyed";
+  }
+
+  /**
+   * Scroll mode: once the (small, seek-optimized) scrub file is fully downloaded, swap the video to an
+   * object URL so every seek is decode-only — no range request can stall a scroll. Double-buffered: the
+   * blob loads in a second element that is seeked to the current time before it replaces the first one, so
+   * there is no black frame. Any failure (CORS, size, offline) keeps the streaming element.
+   */
+  private async upgradeToBlob(v: HTMLVideoElement, src: string, sizeBytes?: number): Promise<void> {
+    if (typeof fetch !== "function" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return;
+    if (sizeBytes && sizeBytes > Player.BLOB_MAX) return;
+    let url: string | null = null;
+    try {
+      const res = await fetch(src, { mode: "cors", credentials: "omit" });
+      const len = Number(res.headers.get("content-length") ?? 0);
+      if (!res.ok || (len && len > Player.BLOB_MAX)) return;
+      const blob = await res.blob();
+      if (blob.size === 0 || blob.size > Player.BLOB_MAX || this.video !== v || this.isDestroyed()) return;
+      url = URL.createObjectURL(blob);
+      const v2 = document.createElement("video");
+      v2.preload = "auto";
+      v2.muted = true;
+      v2.playsInline = true;
+      if (v.poster) v2.poster = v.poster;
+      v2.src = url;
+      const ready = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 8000);
+        v2.addEventListener("loadeddata", () => (clearTimeout(timer), resolve(true)), { once: true });
+        v2.addEventListener("error", () => (clearTimeout(timer), resolve(false)), { once: true });
+        v2.load();
+      });
+      if (!ready || this.video !== v) return;
+      // Land on the frame the visitor is looking at before the swap.
+      v2.currentTime = v.currentTime;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 500);
+        v2.addEventListener("seeked", () => (clearTimeout(timer), resolve()), { once: true });
+      });
+      if (this.video !== v || this.isDestroyed()) return;
+      v.replaceWith(v2);
+      this.video = v2;
+      this.blobUrl = url;
+      url = null;
+      v.removeAttribute("src");
+      v.load();
+      this.requestSeek(v2, Number.isNaN(this.seekWanted) ? v2.currentTime : this.seekWanted);
+    } catch {
+      /* keep streaming */
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+    }
   }
 
   goToScene(sceneId: string): void {
@@ -396,6 +505,10 @@ export class Player {
     }
     this.audio.clear();
     clearTimeout(this.toastTimer);
+    if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
+    this.blobUrl = null;
+    this.analytics?.destroy();
+    this.analytics = null;
     this.stage?.destroy();
     this.root?.replaceChildren();
     this.emitter.clear();
@@ -410,8 +523,16 @@ export class Player {
     if (this.state === s) return;
     this.state = s;
     if (this.playerEl) this.playerEl.dataset.sfState = s;
-    if (s === "playing") this.emitter.emit("play", undefined);
-    if (s === "paused") this.emitter.emit("pause", undefined);
+    if (s === "playing") {
+      this.emitter.emit("play", undefined);
+      this.analytics?.track("video_play", { t: this.time, sceneId: this.currentScene?.id });
+      this.analytics?.startWatch(this.time);
+    }
+    if (s === "paused") {
+      this.emitter.emit("pause", undefined);
+      this.analytics?.endWatch();
+      this.analytics?.track("video_pause", { t: this.time, sceneId: this.currentScene?.id });
+    }
   }
 
   /** Base mode: the video clock drives scenes and layers. */
@@ -420,6 +541,7 @@ export class Player {
     this.time = t;
     const scene = sceneAt(this.project.scenes, t);
     if (scene && scene !== this.currentScene) {
+      this.sceneAnalytics(this.currentScene, scene, t);
       this.currentScene = scene;
       this.emitter.emit("sceneChange", { sceneId: scene.id });
       this.hydrateScene(scene);
@@ -432,6 +554,32 @@ export class Player {
     this.syncAudio(t);
     if (this.progressEl && this.project) this.progressEl.style.width = `${(Math.min(1, t / Math.max(0.01, this.duration())) * 100).toFixed(2)}%`;
     this.emitter.emit("timeupdate", { time: t });
+    if (this.analytics && (this.state === "playing" || this.effective === "scroll")) {
+      this.analytics.tickWatch(t);
+      const d = this.duration();
+      if (d > 0) {
+        const pctDone = t / d;
+        for (const q of [25, 50, 75]) {
+          if (pctDone >= q / 100 && !this.quartilesSeen.has(q)) {
+            this.quartilesSeen.add(q);
+            this.analytics.track(q === 25 ? "video_25" : q === 50 ? "video_50" : "video_75", { t, sceneId: this.currentScene?.id });
+          }
+        }
+      }
+    }
+  }
+
+  /** scene_exit / scene_enter plus one impression per actionable element the first time its scene shows. */
+  private sceneAnalytics(prev: Scene | null, next: Scene, t: number): void {
+    if (!this.analytics) return;
+    this.analytics.endWatch();
+    if (prev) this.analytics.track("scene_exit", { t, sceneId: prev.id });
+    this.analytics.track("scene_enter", { t, sceneId: next.id });
+    for (const layer of next.layers) {
+      if (!(layer.action || layer.type === "product") || this.impressed.has(layer.id)) continue;
+      this.impressed.add(layer.id);
+      this.analytics.track("element_impression", { t, sceneId: next.id, layerId: layer.id, payload: { type: layer.type } });
+    }
   }
 
   private duration(): number {
@@ -442,6 +590,7 @@ export class Player {
 
   private enterScene(scene: Scene): void {
     const changed = scene !== this.currentScene;
+    if (changed) this.sceneAnalytics(this.currentScene, scene, this.time);
     this.currentScene = scene;
     if (this.mode === "scenes") this.renderSceneBackground(scene, this.mediaMounted);
     if (changed) {
@@ -496,11 +645,14 @@ export class Player {
     this.setState("ended");
     this.syncAudio(this.time);
     this.emitter.emit("complete", undefined);
+    this.analytics?.endWatch();
+    this.analytics?.track("video_complete", { t: this.time, sceneId: this.currentScene?.id });
   }
 
   private fail(code: string, message: string): void {
     this.state = "error";
     this.emitter.emit("error", { code, message });
+    this.analytics?.track("player_error", { payload: { code } });
   }
 
   // ---------- audio layers ----------
@@ -607,7 +759,7 @@ export class Player {
   private applyScrubTime(t: number): void {
     if (!this.project) return;
     if (this.mode === "base") {
-      if (this.video && this.video.readyState >= 1 && Math.abs(this.video.currentTime - t) > 0.016) this.video.currentTime = t;
+      if (this.video) this.requestSeek(this.video, t);
       this.onTime(t);
       return;
     }
@@ -615,10 +767,7 @@ export class Player {
     const scene = sceneAt(this.project.scenes, t) ?? this.project.scenes[0] ?? null;
     if (scene) {
       this.enterScene(scene);
-      if (this.video && scene.background.type === "video" && this.video.readyState >= 1) {
-        const want = scene.background.sourceStart + (t - scene.start);
-        if (Math.abs(this.video.currentTime - want) > 0.016) this.video.currentTime = want;
-      }
+      if (this.video && scene.background.type === "video") this.requestSeek(this.video, scene.background.sourceStart + (t - scene.start));
     }
     this.renderTime(t);
   }
@@ -683,6 +832,15 @@ export class Player {
 
   private async handleAction(action: Action, layer: Layer): Promise<void> {
     this.emitter.emit("actionTriggered", { action, layerId: layer.id });
+    if (this.analytics) {
+      const base = { t: this.time, sceneId: this.currentScene?.id, layerId: layer.id };
+      const productId = "product" in action ? action.product.productId : undefined;
+      this.analytics.track(layer.type === "hotspot" ? "hotspot_click" : "element_click", { ...base, productId, payload: { action: action.type, type: layer.type } });
+      if (action.type === "VIEW_PRODUCT") this.analytics.track("product_view", { ...base, productId });
+      else if (action.type === "ADD_TO_CART") this.analytics.track("add_to_cart", { ...base, productId, payload: { quantity: action.quantity } });
+      else if (action.type === "BUY_NOW" || action.type === "OPEN_CHECKOUT") this.analytics.track("checkout_started", { ...base, productId });
+      else if (action.type === "APPLY_COUPON") this.analytics.track("coupon_applied", { ...base, payload: { code: action.code } });
+    }
     if (this.options.onAction?.(action, layer) === true) return;
     const unavailable = (what: string) => {
       this.emitter.emit("error", { code: "COMMERCE_UNAVAILABLE", message: `No commerce adapter can ${what} on this page` });

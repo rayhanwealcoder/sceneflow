@@ -114,16 +114,17 @@ export const renditionArgs = (input: string, out: string, height: number, hasAud
 ];
 
 /**
- * Scroll-optimized MP4 (doc 11.4): no audio, capped at 24 fps, a keyframe every 6 frames and no B-frames,
- * so `currentTime` seeks in either direction land within a quarter second of decode work. Larger than the
- * proxy, which is why it is only produced for short clips (≤ 3 minutes).
+ * Scroll-optimized MP4 (doc 11.4): no audio, constant 30 fps, a keyframe every 4 frames, no B-frames and a
+ * single reference frame, so a `currentTime` seek in either direction decodes at most 3 frames before it
+ * can paint. Larger than the proxy, which is why it is only produced for short clips (≤ 3 minutes); the
+ * runtime downloads it whole in scroll mode so seeks never wait on the network.
  */
 export const scrubArgs = (input: string, out: string, height: number) => [
   "-i", input,
-  "-vf", `scale=-2:'min(${height},ih)',fps=24`,
+  "-vf", `scale=-2:'min(${height},ih)',fps=30`,
   "-an",
   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-tune", "fastdecode",
-  "-g", "6", "-keyint_min", "6", "-sc_threshold", "0", "-bf", "0",
+  "-g", "4", "-keyint_min", "4", "-sc_threshold", "0", "-bf", "0", "-refs", "1",
   "-movflags", "+faststart", "-threads", "0",
   out,
 ];

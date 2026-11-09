@@ -1,5 +1,24 @@
 # Changelog
 
+## Phase 8 — Analytics + smooth scroll-scrub (2026-11-09)
+
+### Added
+- **Scroll-scrub smoothness** (measured, not guessed): seek coalescing in the runtime (`nextSeek()` — one in-flight seek, newest target wins, applied on `seeked`), whole-file download of the scrub rendition in scroll mode with a double-buffered `<video>` swap (no black frame; falls back to streaming without CORS or above 40 MB), scrub encoding 30 fps / keyframe every 4 frames / no B-frames / 1 ref, `/files/*` served with CORS. `scripts/e2e/scroll-smoothness.mjs` generates a 10 s dummy clip, runs it through the real pipeline and scrolls the demo page in a real Chrome (`playwright-core`, system Chrome): **95 % of animation frames show a new video frame, seek p95 7 ms** (old 720p 2 s-GOP pipeline: 73 %, 33 ms).
+- **Analytics (doc §24)**: runtime event client (player_loaded, play/pause, 25/50/75/complete, scene enter/exit, element impressions + clicks, hotspot clicks, product view, add to cart, checkout started, coupon, player error, watched ranges), batched `text/plain` POSTs + `sendBeacon` on leave, per-tab random session id, no cookies, Do Not Track / GPC respected, `analytics: false` option. Publish stamps `analytics.endpoint` into the config. API: public ingest `POST /api/v1/analytics/events` (CORS `*` only there, rate-limited, ≤ 50 events, duplicate ids ignored, only published projects stored, no IPs) and `GET /projects/:id/analytics?days=7|30|90` (totals, daily series, 50-bucket engagement timeline from watched ranges, scenes, elements with CTR, products, devices, pages). Migration `0004` (`analytics_events`).
+- **Dashboard** `/projects/:id/analytics` (Analytics button on the project page): stat tiles, loads vs plays per day, engagement timeline with scene bands, funnel, devices, element / scene / product / page tables; SVG charts with hover, validated two-hue palette with separate dark steps.
+- WordPress plugin: *Send anonymous playback analytics* switch (Settings → SceneFlow → Advanced, filter `sceneflow_analytics_enabled`), passed to every player; readme "External services" describes exactly what is sent; uninstall cleans the option.
+- `docs/ai-video-prompts.md` + a prompt helper under the upload box: how to make a usable clip with Veo / Sora / Runway / Kling (one slow continuous move, no cuts, no text, subject left) with ready prompts.
+- `scripts/e2e/analytics.mjs`: real Chrome plays a published video, clicks, finishes → dashboard summary matches; Do Not Track visitor sends nothing.
+- Tests: 129 Node tests (schema 30, editor 38, server 5, api 15, core 36, worker 5), typecheck 10/10, PHP 23 assertions, WPCS + Plugin Check clean.
+
+### Decisions
+- Analytics on by default with a one-click site-level off switch and DNT respected, because the doc asks for consent-aware analytics *and* a usable dashboard out of the box; nothing identifying is ever stored, so no consent banner is required for it in most jurisdictions — site owners decide.
+- The ingest route is the only CORS-open endpoint and only ever answers 204 / 400; batches are `text/plain` to avoid preflights from every embedding site.
+- Engagement is computed from watched ranges, not from heartbeats, so a 10-minute idle tab adds nothing and reverse scrubbing counts correctly.
+
+### Deferred
+- Revenue / conversion attribution (needs shop order webhooks), A/B comparison, CSV export, event retention policy.
+
 ## Phase 7 — Presets, brand kits, connectors (2026-11-09)
 
 ### Added

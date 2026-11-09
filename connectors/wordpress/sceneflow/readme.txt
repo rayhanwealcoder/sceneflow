@@ -28,7 +28,7 @@ This plugin connects your site to the SceneFlow service (https://sceneflow.app),
 * When you connect the site, a one-time pairing code and your site URL are sent to SceneFlow so it can publish to this site. In return the site stores a shared secret used to verify publish requests.
 * When you publish, preview or place a video from the SceneFlow editor, SceneFlow sends the project configuration to this site; the plugin also answers signed requests for your pages, media library items and (if WooCommerce is active) product data so you can pick them in the editor.
 * Video files are served from SceneFlow's media storage to your visitors' browsers when a video plays.
-* Nothing is sent to SceneFlow from your visitors' browsers apart from loading media; cart actions stay on your own site (WooCommerce Store API).
+* Playback analytics (on by default, switch off under Settings → SceneFlow → Advanced): the player sends anonymous events — player loaded, play/pause, how far the video was watched, scene changes, clicks on buttons/hotspots/product cards, add-to-cart — together with the page URL, a device class (desktop/tablet/mobile) and a random per-tab session id. No cookies are set, no IP address or personal data is stored, and visitors with "Do Not Track" or Global Privacy Control are not counted. Cart actions stay on your own site (WooCommerce Store API).
 
 Terms of service: https://sceneflow.app/terms — Privacy policy: https://sceneflow.app/privacy
 
@@ -56,7 +56,9 @@ Yes. Published configurations are stored in your database and served from your s
 
 = 0.4.0 =
 * Runtime 0.4.0: brand-kit web fonts (only when the project opts in to Google Fonts), preset-based elements render exactly as designed, generic `data-sceneflow-id` embed support.
-* Published videos may now carry `fonts`, `brand` and `preset` metadata from the SceneFlow editor; the plugin stores them as before.
+* Smoother scroll-scrub: seeks are coalesced and the small scroll-optimised file is downloaded once, so scrubbing paints a new frame on nearly every animation frame.
+* Anonymous playback analytics for the SceneFlow Analytics page (see "External services"); switch under Settings → SceneFlow → Advanced.
+* Published videos may now carry `fonts`, `brand`, `preset` and `analytics` metadata from the SceneFlow editor; the plugin stores them as before.
 
 = 0.3.0 =
 * Runtime picks the right video rendition per device, screen density and connection (data saver gets the small file); scroll-scrub videos use a dedicated seek-friendly MP4.

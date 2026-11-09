@@ -12,10 +12,31 @@ defined( 'ABSPATH' ) || exit;
  */
 class SceneFlow_Settings {
 
-	const OPTION          = 'sceneflow_connection';
-	const APP_URL_OPTION  = 'sceneflow_app_url';
-	const PAIRING_TTL     = 600;
-	const PAIRING_MAX_TRY = 10;
+	const OPTION           = 'sceneflow_connection';
+	const APP_URL_OPTION   = 'sceneflow_app_url';
+	const ANALYTICS_OPTION = 'sceneflow_analytics';
+	const PAIRING_TTL      = 600;
+	const PAIRING_MAX_TRY  = 10;
+
+	/**
+	 * Whether players on this site report anonymous playback events to SceneFlow (on by default, see readme
+	 * "External services"). Filter `sceneflow_analytics_enabled` for consent tooling.
+	 *
+	 * @return bool
+	 */
+	public static function analytics_enabled() {
+		$enabled = '0' !== (string) get_option( self::ANALYTICS_OPTION, '1' );
+		return (bool) apply_filters( 'sceneflow_analytics_enabled', $enabled );
+	}
+
+	/**
+	 * Stores the analytics preference.
+	 *
+	 * @param bool $enabled On or off.
+	 */
+	public static function save_analytics( $enabled ) {
+		update_option( self::ANALYTICS_OPTION, $enabled ? '1' : '0', false );
+	}
 
 	/**
 	 * URL of the SceneFlow web app used for one-click connect: option → SCENEFLOW_APP_URL constant.

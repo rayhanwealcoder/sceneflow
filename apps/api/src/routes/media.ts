@@ -100,6 +100,8 @@ export async function mediaRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
       cacheControl: true,
       maxAge: "7d",
       immutable: true,
+      // Published pages live on other origins; the runtime fetches the scrub file whole in scroll mode (CORS).
+      setHeaders: (res) => res.setHeader("access-control-allow-origin", "*"),
     });
   }
 

@@ -154,6 +154,8 @@ export async function projectRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx })
     if (!version) throw new HttpError(404, "VERSION_NOT_FOUND", "Nothing to publish yet. Save the project first.");
     // Swap the editor proxies for the best renditions available right now (doc 11.2); the version becomes immutable after this.
     const resolved = await resolvePublishedMedia(ctx.db, version.configJson);
+    // Published copies know where to report anonymous playback events (doc §24); the editor's own setting can turn it off.
+    resolved.analytics = { endpoint: `${ctx.cfg.publicUrl}/api/v1/analytics/events`, enabled: version.configJson.analytics?.enabled ?? true };
     const media = await mediaReadiness(ctx.db, resolved);
     await ctx.db.transaction(async (tx) => {
       await tx.update(projectVersions).set({ configJson: resolved, checksum: checksum(resolved), state: "published" }).where(eq(projectVersions.id, version.id));

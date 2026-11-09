@@ -162,6 +162,9 @@ export default function ProjectPage() {
             {draft && project.publishedVersion !== draft.version ? ` · draft v${draft.version}` : ""}
           </span>
           <Troubleshoot projectId={project.id} />
+          <a className="btn" href={`/projects/${project.id}/analytics`} title="Loads, plays, engagement timeline, clicks, add-to-carts">
+            Analytics
+          </a>
           <a className="btn primary" href={`/projects/${project.id}/editor`}>
             Open editor
           </a>

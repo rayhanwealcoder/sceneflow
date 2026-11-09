@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { createDb, createQueue, createStorage, deriveKey, runMigrations, WordPressConnector, type JobSender } from "@sceneflow/server";
 import type { AppConfig } from "./config.js";
 import { HttpError, type Ctx } from "./context.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 import { authRoutes } from "./routes/auth.js";
 import { commerceRoutes } from "./routes/commerce.js";
 import { mediaRoutes } from "./routes/media.js";
@@ -32,7 +33,13 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
 
   const app = Fastify({ logger: cfg.logger, trustProxy: true, bodyLimit: 1024 * 1024 });
 
-  await app.register(cors, { origin: cfg.webOrigin, credentials: true });
+  // The web app talks to the API with cookies; the public analytics ingest is open to every site that embeds a player.
+  await app.register(cors, {
+    delegator: (req, cb) => {
+      const open = req.url?.startsWith("/api/v1/analytics/") ?? false;
+      cb(null, open ? { origin: "*", credentials: false, methods: ["POST", "OPTIONS"] } : { origin: cfg.webOrigin, credentials: true });
+    },
+  });
   await app.register(cookie);
   await app.register(rateLimit, { global: false, allowList: () => cfg.rateLimits === false });
 
@@ -59,6 +66,7 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   await app.register(siteRoutes, { ctx });
   await app.register(commerceRoutes, { ctx });
   await app.register(presetRoutes, { ctx });
+  await app.register(analyticsRoutes, { ctx });
   await app.register(publicRoutes, { ctx });
 
   // Built WordPress plugin zip (pnpm build:wp) for the "Download plugin" button.

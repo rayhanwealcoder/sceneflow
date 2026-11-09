@@ -104,8 +104,23 @@ site    -> GET  /wp-json/sceneflow/v1/project/<id>  (same-origin, etag = checksu
 - **Thumbnails** are the real `Stage` renderer at small size, so a preset looks exactly like what lands on the canvas.
 - **Connectors folder**: `connectors/<platform>/connector.json` + `README.md`; `scripts/build-connectors.mjs` copies the runtime in, zips each connector and writes `dist/connectors/manifest.json` (versions, sha256). The runtime gained a platform-neutral embed (`SceneFlow.mount()`, `<script data-auto>`) so Webflow-style sites need no connector code beyond a script tag; the Shopify theme app extension uses the same embed plus the Shopify adapter module.
 
+## Scroll-scrub smoothness (Phase 8 prelude)
+
+- **Seek coalescing** (`nextSeek()` in `scroll.ts`): browsers cancel an in-flight seek when `currentTime` is set again, and a cancelled seek never paints. Setting it on every scroll tick therefore showed *fewer* frames. Rule: one seek in flight, remember only the newest wanted time, apply it on `seeked`.
+- **Whole-file download** in scroll mode: the scrub rendition (≤ 40 MB) is fetched once and swapped in as an object URL via a double-buffered second `<video>` (seeked to the current frame before the swap), so no range request can stall a scroll. Needs CORS on the media origin (`/files/*` sends `*`; buckets need a GET CORS rule); without it the player keeps streaming.
+- **Encoding**: the scrub MP4 is 30 fps, keyframe every 4 frames, no B-frames, one reference frame — a seek decodes at most 3 frames.
+- Measured in a real Chrome (`scripts/e2e/scroll-smoothness.mjs`, dummy 10 s clip, steady 12 px/frame scroll down and back): new pipeline paints a new frame on 95 % of animation frames, seek p95 7 ms; the previous 720p 2 s-GOP file managed 73 % and 33 ms.
+
+## Analytics (Phase 8)
+
+- **Event client** (`packages/core/src/analytics.ts`, ~1.5 KB gzip): doc §24.1 events plus `watch` ranges (from → to seconds, closed every 5 s / on pause, seek, scene change, hide) and `coupon_applied`. Batches of ≤ 20 leave every 4 s as a `text/plain` POST (no CORS preflight), the remainder on `pagehide` via `sendBeacon`. Session id = random per-tab value in sessionStorage; no cookies; Do Not Track / Global Privacy Control switch it off entirely. The published config carries `analytics.endpoint` (stamped at publish) and `analytics.enabled`; hosts can also pass `analytics: false` to the Player (the WordPress plugin exposes this as a setting).
+- **Ingest** `POST /api/v1/analytics/events`: CORS `*` for this path only (cors `delegator`), 240 req/min per IP, ≤ 50 events, Zod-validated, timestamps clamped to ±1 day, event ids are the primary key (`ON CONFLICT DO NOTHING`), only published projects are stored (positive lookups cached 60 s). No IP address is written.
+- **Summary** `GET /projects/:id/analytics?days=7|30|90`: one SQL pass per block — totals with `count(…) filter`, per-day series, engagement timeline (50 buckets × distinct sessions whose `watch` range overlaps the bucket, via `generate_series`), scenes, elements (impressions / clicks / CTR), products, devices, pages. Names come from the published config, so renamed elements stay readable.
+- **Dashboard** (`/projects/:id/analytics`): stat tiles, loads-vs-plays line chart, engagement timeline with scene bands, funnel (loaded → played → 25/50/75 → finished), devices, tables. Hand-written SVG; two fixed categorical hues from a validated palette (`--viz-1/2`, separate dark steps), thin marks, hover tooltips, text in text tokens.
+
 ## Open items carried forward
 
 - Elementor / Bricks / Divi / Breakdance native widgets (the shortcode and placements already work inside them).
 - Shopify / Easy Digital Downloads / SureCart catalogs on the server side (runtime adapter pattern is ready); Shopify extension not yet exercised on a live store.
 - Preset marketplace / sharing across workspaces (agency scope), scene-level "refresh from preset".
+- Analytics: revenue / conversion attribution (doc 24.2) needs order webhooks from the shop; A/B comparison; CSV export; retention policy for `analytics_events`.

@@ -145,6 +145,34 @@ export interface Placement {
   createdAt: string;
 }
 
+/** `GET /projects/:id/analytics` (doc §24). */
+export interface AnalyticsSummary {
+  range: { days: number; from: string; to: string };
+  totals: {
+    loads: number;
+    sessions: number;
+    plays: number;
+    playRate: number | null;
+    quartiles: { q25: number; q50: number; q75: number; complete: number };
+    completes: number;
+    completionRate: number | null;
+    avgWatchSeconds: number;
+    clicks: number;
+    productViews: number;
+    addToCarts: number;
+    checkouts: number;
+    coupons: number;
+    errors: number;
+  };
+  daily: Array<{ day: string; loads: number; plays: number; completes: number; clicks: number }>;
+  timeline: { buckets: number; duration: number; values: number[] };
+  scenes: Array<{ sceneId: string; name: string; start: number; end: number; enters: number; sessions: number }>;
+  elements: Array<{ layerId: string; name: string; type: string; impressions: number; clicks: number; ctr: number | null }>;
+  products: Array<{ productId: string; title: string; views: number; addToCarts: number; checkouts: number }>;
+  devices: { desktop: number; tablet: number; mobile: number };
+  pages: Array<{ host: string; path: string; loads: number }>;
+}
+
 /** A product source the editor can pick from (WooCommerce of the connected site, hand-entered products...). */
 export interface CatalogProviderInfo {
   id: string;
