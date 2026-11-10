@@ -11,6 +11,7 @@ import { aiRoutes } from "./routes/ai.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { authRoutes } from "./routes/auth.js";
 import { commerceRoutes } from "./routes/commerce.js";
+import { exportRoutes } from "./routes/exports.js";
 import { mediaRoutes } from "./routes/media.js";
 import { presetRoutes } from "./routes/presets.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -86,6 +87,7 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   await app.register(aiRoutes, { ctx });
   await app.register(workspaceRoutes, { ctx });
   await app.register(reviewRoutes, { ctx });
+  await app.register(exportRoutes, { ctx });
   await app.register(publicRoutes, { ctx });
 
   // Built WordPress plugin zip (pnpm build:wp) for the "Download plugin" button.

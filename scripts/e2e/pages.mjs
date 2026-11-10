@@ -76,7 +76,8 @@ check("editor: Tour button → Skip");
 await page.click(".ed-top a[title='Back to project']");
 await page.waitForURL(`${WEB}/projects/${projectId}`);
 await page.waitForSelector("text=Open editor");
-check("editor → project page");
+await page.waitForSelector("[data-testid=export-card] [data-testid=export-start]");
+check("editor → project page (with the MP4 export card)");
 
 await page.click("text=Analytics");
 await page.waitForURL(`${WEB}/projects/${projectId}/analytics`);

@@ -83,7 +83,11 @@ Everything works without any AI account: you get starter text to edit and the co
 
 **Dashboard.** Top bar → **Dashboard**: what needs attention (a site that cannot be reached, a client who has not answered for days, something approved but not published, player errors), mentions of you, every project grouped by client with its live version, review state, site health and 7-day loads / plays / clicks, and a feed of who did what.
 
-### 9. When something does not work
+### 9. Download as MP4
+
+Project page → **Download as MP4** (also in the editor's ⋯ menu). Pick what to render (current draft or the published version), quality (1080p or 720p), frame rate and — for portrait videos — which layout (phone by default), then **Render MP4**. The server renders it with the same player your visitors see, so text, motion, captions and voiceover are all in the file; buttons, hotspots and product cards appear as they look at that moment (a video file cannot be clicked). The row shows progress and turns into a **Download** button when the file is ready; it is named after the project (`spring-launch-1080p.mp4`). Rendering takes about as long as the video, often less. Scroll videos export as a normal play-through. Up to 10 minutes per file.
+
+### 10. When something does not work
 
 Project page → **Something not working?** runs the whole chain for you: draft, media, published version, site reachable, plugin connected, WooCommerce available, pushed version, what the site actually serves, placements. Each line that fails has a button that takes you to the fix.
 
@@ -91,7 +95,7 @@ Project page → **Something not working?** runs the whole chain for you: draft,
 
 ## Part 2 — Running SceneFlow from this repo
 
-Requirements: Node 20.6+, PostgreSQL (native install, no Docker), pnpm (`npm i -g pnpm`). FFmpeg comes from npm.
+Requirements: Node 20.6+, PostgreSQL (native install, no Docker), pnpm (`npm i -g pnpm`). FFmpeg comes from npm. MP4 export needs **Google Chrome** on the machine that runs the worker (found automatically; `EXPORT_BROWSER=/path/to/chrome` in `apps/worker/.env` otherwise) — everything else works without it.
 
 ```bash
 pnpm install
@@ -111,6 +115,7 @@ pnpm build && pnpm dev  # web :3000, api :4800, worker
 | `node scripts/e2e/pages.mjs` | Real Chrome walks every page (sign-up → editor → analytics → …) and fails on any page error |
 | `node scripts/e2e/ai.mjs [--record]` | Real Chrome through the UI: AI script → scenes → voiceovers → captions → publish → player; `--record` writes `dist/walkthrough/sceneflow-walkthrough.mp4` |
 | `node scripts/e2e/agency.mjs` | Real Chrome, three browsers: owner adds client + invite → client reviews and approves through the link → publish → dashboard → colleague joins, comments with a pin and a mention |
+| `node scripts/e2e/export.mjs` | Uploads a clip + voice track, builds text / button / hotspot / captions / voiceover, renders a 720p MP4 through the UI, downloads it and checks it with ffprobe + frame samples (keeps `dist/e2e/export-e2e.mp4`) |
 
 AI keys are optional (`apps/api/.env.example`, section "AI"): without them the API serves starter text and uses the operating system's voice (Windows / macOS built in; `espeak-ng` on Linux).
 

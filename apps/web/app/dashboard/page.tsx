@@ -24,6 +24,7 @@ const ACTIVITY_TEXT: Record<Activity["type"], (a: Activity) => string> = {
   published: (a) => `${a.actorName} published “${a.projectName}” ${a.detail ?? ""}`,
   comment: (a) => `${a.actorName} commented on “${a.projectName}”`,
   client_comment: (a) => `${a.actorName} (client) commented on “${a.projectName}”`,
+  exported: (a) => `${a.actorName} downloaded “${a.projectName}” as MP4${a.detail ? ` (${a.detail})` : ""}`,
 };
 const ICON: Record<Dashboard["alerts"][number]["severity"], string> = { fail: "✕", warn: "!", info: "i" };
 

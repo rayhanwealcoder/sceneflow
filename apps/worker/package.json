@@ -14,8 +14,11 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@opentelemetry/api": "1.10.0",
+    "@sceneflow/core": "workspace:*",
+    "@sceneflow/schema": "workspace:*",
     "@sceneflow/server": "workspace:*",
     "drizzle-orm": "^0.45.4",
+    "playwright-core": "1.50.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

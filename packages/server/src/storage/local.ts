@@ -128,6 +128,24 @@ export class LocalStorageProvider implements StorageProvider {
     return `${this.opts.publicBaseUrl}/${key}`;
   }
 
+  /** Base of every public URL this provider hands out (e.g. http://localhost:4800/files). */
+  get publicBaseUrl(): string {
+    return this.opts.publicBaseUrl;
+  }
+
+  /** Disk path of a public URL served by this provider, or null when the URL is not ours / not a safe key. */
+  publicPathForUrl(url: string): string | null {
+    const base = `${this.opts.publicBaseUrl}/`;
+    if (!url.startsWith(base)) return null;
+    let key: string;
+    try {
+      key = decodeURIComponent(url.slice(base.length).split(/[?#]/)[0] ?? "");
+    } catch {
+      return null;
+    }
+    return isSafeKey(key) ? join(this.publicDir, key) : null;
+  }
+
   async deleteObject(key: string): Promise<void> {
     this.assertKey(key);
     await rm(join(this.originalsDir, key), { force: true });

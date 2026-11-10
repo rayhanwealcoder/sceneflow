@@ -143,7 +143,53 @@ export interface Comment {
 
 export type CommentAnchor = { t?: number | null; sceneId?: string | null; layerId?: string | null; x?: number | null; y?: number | null };
 
-export type ActivityType = "review_requested" | "client_review_requested" | "approved" | "changes_requested" | "review_reset" | "published" | "comment" | "client_comment";
+export type ActivityType = "review_requested" | "client_review_requested" | "approved" | "changes_requested" | "review_reset" | "published" | "comment" | "client_comment" | "exported";
+
+/* ---------- MP4 export ---------- */
+
+export type ExportStatus = "queued" | "rendering" | "ready" | "failed";
+export type ExportQuality = "1080p" | "720p";
+export type ExportDevice = "desktop" | "tablet" | "mobile";
+
+export interface ExportOptions {
+  quality: ExportQuality;
+  width: number;
+  height: number;
+  fps: number;
+  device: ExportDevice;
+}
+
+/** `GET /api/v1/projects/:id/exports` — one rendered (or rendering) MP4. */
+export interface VideoExport {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  requestedBy: string | null;
+  requestedByName: string;
+  source: "draft" | "published";
+  version: number;
+  checksum: string;
+  options: ExportOptions;
+  status: ExportStatus;
+  progress: { stage: string; percent: number } | null;
+  fileName: string | null;
+  /** Authenticated download (attachment) once `status` is ready. */
+  fileUrl: string | null;
+  sizeBytes: number | null;
+  durationSec: number | null;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExportRequest {
+  source: "draft" | "published";
+  quality: ExportQuality;
+  fps: 24 | 25 | 30 | 60;
+  device: "auto" | ExportDevice;
+}
 
 export interface Activity {
   id: string;

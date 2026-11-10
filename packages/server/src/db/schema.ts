@@ -184,7 +184,7 @@ export const comments = pgTable(
   (t) => [index("comments_project_idx").on(t.projectId, t.createdAt)],
 );
 
-export const ACTIVITY_TYPES = ["review_requested", "client_review_requested", "approved", "changes_requested", "review_reset", "published", "comment", "client_comment"] as const;
+export const ACTIVITY_TYPES = ["review_requested", "client_review_requested", "approved", "changes_requested", "review_reset", "published", "comment", "client_comment", "exported"] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 /** What happened on which project — the agency dashboard's feed and the source of its alerts. */
@@ -327,6 +327,54 @@ export const analyticsEvents = pgTable(
     payloadJson: jsonb("payload_json").$type<Record<string, string | number | boolean>>().notNull().default({}),
   },
   (t) => [index("analytics_events_project_time_idx").on(t.projectId, t.occurredAt), index("analytics_events_project_type_idx").on(t.projectId, t.type, t.occurredAt)],
+);
+
+export const EXPORT_STATUSES = ["queued", "rendering", "ready", "failed"] as const;
+export type ExportStatus = (typeof EXPORT_STATUSES)[number];
+export const EXPORT_SOURCES = ["draft", "published"] as const;
+export type ExportSource = (typeof EXPORT_SOURCES)[number];
+
+/** Frozen render settings of one export (what the worker renders; shown in the UI). */
+export interface ExportOptions {
+  quality: "1080p" | "720p";
+  width: number;
+  height: number;
+  fps: number;
+  /** Responsive layout the layers are rendered with. */
+  device: "desktop" | "tablet" | "mobile";
+}
+
+/**
+ * MP4 exports (doc §31 "MP4 export"). The project JSON is frozen into the row when the export is requested
+ * (autosave keeps rewriting the draft), the worker renders it frame by frame in headless Chrome and stores
+ * the file under the public prefix; `storage_key` is what the API streams / redirects for the download.
+ */
+export const videoExports = pgTable(
+  "video_exports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+    requestedByName: text("requested_by_name").notNull(),
+    source: text("source", { enum: EXPORT_SOURCES }).notNull().default("draft"),
+    version: integer("version").notNull(),
+    checksum: text("checksum").notNull(),
+    configJson: jsonb("config_json").$type<Project>().notNull(),
+    optionsJson: jsonb("options_json").$type<ExportOptions>().notNull(),
+    status: text("status", { enum: EXPORT_STATUSES }).notNull().default("queued"),
+    progressJson: jsonb("progress_json").$type<{ stage: string; percent: number }>(),
+    storageKey: text("storage_key"),
+    fileName: text("file_name"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    durationSec: doublePrecision("duration_sec"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("video_exports_project_idx").on(t.projectId, t.createdAt)],
 );
 
 export const MEDIA_TYPES = ["video", "image", "audio"] as const;

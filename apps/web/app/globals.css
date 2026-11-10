@@ -220,8 +220,8 @@ label.field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
 .ed-menu summary { list-style: none; cursor: pointer; }
 .ed-menu summary::-webkit-details-marker { display: none; }
 .ed-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.25); display: grid; gap: 2px; }
-.ed-menu-list button { text-align: left; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; }
-.ed-menu-list button:hover:not(:disabled) { background: var(--surface-2); }
+.ed-menu-list button, .ed-menu-list a { text-align: left; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; text-decoration: none; }
+.ed-menu-list button:hover:not(:disabled), .ed-menu-list a:hover { background: var(--surface-2); text-decoration: none; }
 .ed-menu-list button:disabled { color: var(--muted); cursor: default; }
 .brand-swatch { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border); display: inline-block; }
 .brand-logo { height: 36px; max-width: 140px; object-fit: contain; background: var(--surface-2); border-radius: 6px; padding: 4px; }

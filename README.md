@@ -33,7 +33,7 @@ pnpm typecheck
 
 Create the test database once: `psql -U postgres -c "create database sceneflow_test;"`.
 
-End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`; `node scripts/e2e/agency.mjs` runs the agency flow (client review link, approval, invite, comments, dashboard) across three browser contexts.
+End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`; `node scripts/e2e/agency.mjs` runs the agency flow (client review link, approval, invite, comments, dashboard) across three browser contexts; `node scripts/e2e/export.mjs` renders a 720p MP4 through the UI, downloads it and checks the file.
 
 ## Layout
 
@@ -80,6 +80,10 @@ The runtime sends anonymous, batched playback events (loads, plays, quartiles, s
 
 Clients group projects (and can carry their own brand kit); team members join through one-time invitation links with a role (viewer / editor / admin); comments in the editor are anchored to scene, moment, element and a point on the canvas and support `@mentions`; the approval workflow (Draft → Internal review → Client review → Approved → Published) gates publishing for editors when a project requires approval; a client reviews and approves through a revocable link without an account (`/review/:token`); the **Dashboard** shows alerts, mentions, every project per client with site health and 7-day numbers, and an activity feed. Routes live in `apps/api/src/routes/workspace.ts` and `review.ts`.
 
+## MP4 export
+
+Project page → **Download as MP4**: the worker renders the project in headless Google Chrome with the published runtime (so text, motion, captions, product cards and voiceover look exactly as on the site), pipes the frames into FFmpeg and mixes the audio from the source files. 1080p / 720p, 24–60 fps, draft or published version, portrait canvases in the phone layout; the file downloads with the project's name. Needs Google Chrome on the worker host (`EXPORT_BROWSER` to point at it). Routes in `apps/api/src/routes/exports.ts`, renderer in `apps/worker/src/export.ts`, planning in `packages/server/src/export/plan.ts`.
+
 ## Presets and brand kit
 
 - Starter presets (elements, scenes, motions) ship in `packages/editor/src/presets.ts`; users save their own (elements, scenes, templates) to the cloud library (`/api/v1/presets`). Applying a preset is always an independent copy; newer library versions are offered per element, never pushed.
@@ -89,7 +93,7 @@ See `docs/architecture.md` for decisions and `CHANGELOG.md` for progress by phas
 
 ## Deploying to a VPS (no Docker)
 
-1. Install Node 20+, PostgreSQL, pnpm. Create a database and user.
+1. Install Node 20+, PostgreSQL, pnpm. Create a database and user. For MP4 export install Google Chrome (`google-chrome-stable`; Chromium lacks H.264) and, if it is not on the default path, set `EXPORT_BROWSER` in `apps/worker/.env`.
 2. Clone, `pnpm install`, `pnpm build`, `pnpm build:connectors`.
 3. Copy `.env.example` → `.env` in `apps/api` and `apps/worker`; set `DATABASE_URL`, a long `SESSION_SECRET`, `PUBLIC_URL=https://api.yourdomain`, `WEB_ORIGIN`, `STORAGE_DIR=/var/lib/sceneflow` (or the `S3_*` variables for R2).
 4. Set `NEXT_PUBLIC_API_URL=https://api.yourdomain` in `apps/web/.env` before `pnpm build` (it is baked into the web bundle).

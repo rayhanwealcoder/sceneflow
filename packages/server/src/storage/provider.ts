@@ -23,8 +23,12 @@ export interface StorageProvider {
   readOriginal(key: string): Promise<string>;
   /** Server-side write of an original (generated media such as AI voiceovers). Returns bytes written. */
   putOriginal(key: string, body: Buffer, contentType: string): Promise<number>;
-  /** Publishes a derived file (proxy, poster, thumbnail) and returns its public URL. */
-  putPublic(key: string, localFilePath: string, contentType: string): Promise<string>;
+  /**
+   * Publishes a derived file (proxy, poster, thumbnail, export) and returns its public URL.
+   * `contentDisposition` makes a browser download the file instead of playing it (remote providers only; the
+   * local provider's download route sets the header itself).
+   */
+  putPublic(key: string, localFilePath: string, contentType: string, opts?: { contentDisposition?: string }): Promise<string>;
   publicUrl(key: string): string;
   deleteObject(key: string): Promise<void>;
 }

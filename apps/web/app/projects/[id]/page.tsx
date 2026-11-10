@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ExportCard } from "@/components/ExportCard";
 import { PlacementPanel } from "@/components/PlacementPanel";
 import { ReviewCard } from "@/components/ReviewCard";
 import { ReviewChip } from "@/components/ReviewStatus";
@@ -11,7 +12,7 @@ import { API_URL, api, errorMessage } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import type { Client, Comment, MediaAsset, Project, ProjectDetail, Site, SitePublishResult, VersionSummary, WorkspaceRole } from "@/lib/types";
 
-type Draft = { version: number; state: string; checksum: string; config: { video?: { assetId: string }; scenes: unknown[] } } | null;
+type Draft = { version: number; state: string; checksum: string; config: { video?: { assetId: string }; canvas?: { aspectRatio?: string }; scenes: unknown[] } } | null;
 
 const fmtBytes = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 
@@ -364,6 +365,8 @@ export default function ProjectPage() {
           <PlacementPanel project={project} site={site} />
         </section>
       )}
+
+      <ExportCard project={project} draftVersion={draft?.version ?? null} role={role} portrait={/^(9:16|4:5)$/.test(draft?.config.canvas?.aspectRatio ?? "")} />
     </div>
   );
 }

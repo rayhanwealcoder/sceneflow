@@ -90,9 +90,9 @@ export class S3StorageProvider implements StorageProvider {
     return dest;
   }
 
-  async putPublic(key: string, localFilePath: string, contentType: string): Promise<string> {
+  async putPublic(key: string, localFilePath: string, contentType: string, opts?: { contentDisposition?: string }): Promise<string> {
     await this.client.send(
-      new PutObjectCommand({ Bucket: this.opts.bucket, Key: this.publicKey(key), Body: await readFile(localFilePath), ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" }),
+      new PutObjectCommand({ Bucket: this.opts.bucket, Key: this.publicKey(key), Body: await readFile(localFilePath), ContentType: contentType, CacheControl: "public, max-age=31536000, immutable", ContentDisposition: opts?.contentDisposition }),
     );
     return this.publicUrl(key);
   }

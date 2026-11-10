@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
-import { createDb, createQueue, createStorage, QUEUES, storageConfigFromEnv, storageEnvSchema, type MediaProcessJob, type MediaRenditionsJob, type PgBoss } from "@sceneflow/server";
+import { createDb, createQueue, createStorage, QUEUES, storageConfigFromEnv, storageEnvSchema, type ExportRenderJob, type MediaProcessJob, type MediaRenditionsJob, type PgBoss } from "@sceneflow/server";
 import { z } from "zod";
+import { renderExport } from "./export.js";
 import { processMedia, processRenditions } from "./process.js";
 
 const env = z
@@ -10,6 +11,8 @@ const env = z
     SESSION_SECRET: z.string().min(16),
     /** Parallel fast-path jobs (poster/proxy). Renditions always run one at a time: they saturate the CPU on their own. */
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+    /** Chrome binary for MP4 exports; default: the installed Google Chrome. */
+    EXPORT_BROWSER: z.string().optional(),
   })
   .merge(storageEnvSchema)
   .parse(process.env);
@@ -61,7 +64,19 @@ await boss.work<MediaRenditionsJob>(
     console.log(`[worker] renditions done ${data.assetId}: ${items.map((r) => `${r.kind}@${r.height}p`).join(", ") || "none"} in ${Date.now() - started}ms`);
   }),
 );
-console.log(`[worker] listening on "${QUEUES.mediaProcess}" (x${env.WORKER_CONCURRENCY}) and "${QUEUES.mediaRenditions}" (x1), storage: ${storage.id}`);
+
+// MP4 exports: one at a time — a headless Chrome plus x264 keeps every core busy on their own.
+await boss.work<ExportRenderJob>(
+  QUEUES.exportRender,
+  { batchSize: 1, pollingIntervalSeconds: 2 },
+  parallel<ExportRenderJob>(QUEUES.exportRender, async (data) => {
+    console.log(`[worker] export ${data.exportId}`);
+    const started = Date.now();
+    const r = await renderExport({ db, storage, publicUrl, browserPath: env.EXPORT_BROWSER }, data.exportId);
+    console.log(`[worker] export done ${data.exportId}: ${r.frames} frames in ${r.renderMs}ms (${(r.frames / (r.renderMs / 1000)).toFixed(1)} fps), ${(r.sizeBytes / 1024 / 1024).toFixed(1)} MB, ${r.durationSec.toFixed(1)}s${r.slowFrames ? `, ${r.slowFrames} slow frame(s)` : ""}${r.pageErrors.length ? `, page errors: ${r.pageErrors.join(" | ").slice(0, 300)}` : ""}; total ${Date.now() - started}ms`);
+  }),
+);
+console.log(`[worker] listening on "${QUEUES.mediaProcess}" (x${env.WORKER_CONCURRENCY}), "${QUEUES.mediaRenditions}" (x1) and "${QUEUES.exportRender}" (x1), storage: ${storage.id}`);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
