@@ -44,9 +44,19 @@ export function exportOptionsFor(project: Project, req: Pick<ExportRequest, "qua
   return { quality: req.quality, ...exportDimensions(ratio, req.quality), fps: req.fps, device: resolveExportDevice(ratio, req.device) };
 }
 
-/** Length of the export: the base video, or the end of the last scene. */
+/** Length of the project timeline in video seconds: the base video, or the end of the last scene. */
 export function projectDuration(p: Project): number {
   return p.video?.duration ?? p.scenes[p.scenes.length - 1]?.end ?? 0;
+}
+
+/** Playback speed the file plays at (scroll projects export as a 1× play-through, like the runtime treats them). */
+export function exportSpeed(p: Project): number {
+  return p.playback.mode === "scroll" ? 1 : p.playback.speed;
+}
+
+/** Wall-clock length of the exported file: the timeline divided by the playback speed. */
+export function exportDuration(p: Project): number {
+  return projectDuration(p) / exportSpeed(p);
 }
 
 /** Highest progressive rendition (1080p before 720p before the proxy); `fallback` when there are none. */
@@ -64,7 +74,7 @@ export function exportConfig(project: Project): Project {
   const { analytics: _analytics, ...rest } = project;
   const video = project.video ? { ...project.video, src: bestSource(project.video.sources, project.video.src) ?? project.video.src, sources: undefined } : undefined;
   const scenes = project.scenes.map((s) => (s.background.type === "video" ? { ...s, background: { ...s.background, src: bestSource(s.background.sources, s.background.src), sources: undefined } } : s));
-  return { ...rest, video, scenes, playback: { ...project.playback, mode: "normal", controls: false, showProgress: false } };
+  return { ...rest, video, scenes, playback: { ...project.playback, speed: exportSpeed(project), mode: "normal", controls: false, showProgress: false, markers: false } };
 }
 
 /** One piece of audio on the export timeline. */
@@ -76,7 +86,7 @@ export interface AudioCue {
   sourceStart: number;
   /** Length in seconds. */
   duration: number;
-  /** Position on the export timeline in seconds. */
+  /** Position on the export timeline in seconds (timeline seconds; the speed is applied when mixing). */
   at: number;
   /** 0..1 */
   volume: number;
@@ -88,7 +98,8 @@ const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 /**
  * What the player would play: the base video's own sound, or each scene's background video while that scene is
  * on, plus every audio layer (voiceover, music) from its start inside the scene. A muted project exports silent,
- * exactly like the runtime (which also keeps audio layers quiet when `playback.muted` is on).
+ * exactly like the runtime (which also keeps audio layers quiet when `playback.muted` is on). `total` is in
+ * timeline (video) seconds.
  */
 export function audioPlan(project: Project, total: number): AudioCue[] {
   if (project.playback.muted || total <= 0) return [];
@@ -112,17 +123,36 @@ export function audioPlan(project: Project, total: number): AudioCue[] {
 
 const num = (n: number) => (Math.round(n * 1000) / 1000).toString();
 
+/** `atempo` accepts 0.5–2 per stage (FFmpeg 4.x); other speeds are chained: 0.25 = 0.5·0.5, 3 = 2·1.5. */
+export function tempoFilters(speed: number): string[] {
+  const out: string[] = [];
+  let s = speed;
+  if (!(s > 0) || Math.abs(s - 1) < 1e-6) return out;
+  while (s > 2) {
+    out.push("atempo=2");
+    s /= 2;
+  }
+  while (s < 0.5) {
+    out.push("atempo=0.5");
+    s /= 0.5;
+  }
+  if (Math.abs(s - 1) > 1e-6) out.push(`atempo=${num(s)}`);
+  return out;
+}
+
 /**
  * FFmpeg `-filter_complex` for the cues: input 0 is the rendered video, cue i is input i + 1. Every cue is
- * trimmed, moved to its place, padded to the full length (so `amix` never re-normalises mid-way) and the
- * 1/N scaling of `amix` is undone, with a limiter against clipping. Works with FFmpeg ≥ 4.1 (no `normalize`).
+ * trimmed, sped up or slowed to the playback speed, moved to its place, padded to the full length (so `amix`
+ * never re-normalises mid-way) and the 1/N scaling of `amix` is undone, with a limiter against clipping.
+ * `total` is the file's length in wall-clock seconds. Works with FFmpeg ≥ 4.1 (no `normalize`).
  */
-export function audioFilterGraph(cues: AudioCue[], total: number): { filter: string; out: string } {
+export function audioFilterGraph(cues: AudioCue[], total: number, speed = 1): { filter: string; out: string } {
   const parts: string[] = [];
+  const tempo = tempoFilters(speed).join(",");
   cues.forEach((c, i) => {
-    const delay = Math.max(0, Math.round(c.at * 1000));
+    const delay = Math.max(0, Math.round((c.at / speed) * 1000));
     parts.push(
-      `[${i + 1}:a]atrim=start=${num(c.sourceStart)}:end=${num(c.sourceStart + c.duration)},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=${num(c.volume)},adelay=${delay}|${delay},apad,atrim=0:${num(total)},asetpts=PTS-STARTPTS[a${i}]`,
+      `[${i + 1}:a]atrim=start=${num(c.sourceStart)}:end=${num(c.sourceStart + c.duration)},asetpts=PTS-STARTPTS,${tempo ? tempo + "," : ""}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=${num(c.volume)},adelay=${delay}|${delay},apad,atrim=0:${num(total)},asetpts=PTS-STARTPTS[a${i}]`,
     );
   });
   if (cues.length === 1) return { filter: parts.join(";"), out: "[a0]" };

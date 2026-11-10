@@ -3,7 +3,7 @@ import type { Readable } from "node:stream";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
-import { LocalStorageProvider, mediaAssets, QUEUES, UploadTooLargeError, type MediaProcessJob, type MediaType } from "@sceneflow/server";
+import { LocalStorageProvider, mediaAssets, QUEUES, UploadTooLargeError, type MediaFrameJob, type MediaProcessJob, type MediaType } from "@sceneflow/server";
 import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
 import { requireMember, requireUser } from "../lib/auth.js";
@@ -127,6 +127,36 @@ export async function mediaRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     if (!asset) throw new HttpError(404, "ASSET_NOT_FOUND", "Media not found");
     await requireMember(ctx, user.id, asset.workspaceId);
     return { asset: toPublicAsset(asset) };
+  });
+
+  /**
+   * A full-size still from a video at `time` seconds, for a custom thumbnail. The worker extracts it; this call
+   * waits for it (a second or two) so the editor gets a URL back in one round trip. Repeats for a time already
+   * extracted answer at once.
+   */
+  app.post<{ Params: { id: string } }>("/api/v1/media/:id/frame", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) => {
+    const user = await requireUser(ctx, req);
+    const id = assertUuid(req.params.id, "asset id");
+    const body = parseBody(z.object({ time: z.number().min(0).max(36_000) }), req.body);
+    const asset = await ctx.db.query.mediaAssets.findFirst({ where: eq(mediaAssets.id, id) });
+    if (!asset) throw new HttpError(404, "ASSET_NOT_FOUND", "Media not found");
+    await requireMember(ctx, user.id, asset.workspaceId, "editor");
+    if (asset.type !== "video" || asset.status !== "ready") throw new HttpError(409, "ASSET_NOT_READY", "Frames can only be taken from a processed video");
+    const duration = asset.metadataJson.duration ?? 0;
+    const at = Math.round(Math.max(0, Math.min(body.time, Math.max(0, duration - 0.05))) * 1000) / 1000;
+    const same = (f: { time: number }) => Math.abs(f.time - at) < 0.0005;
+    const known = asset.metadataJson.frames?.find(same);
+    if (known) return { frame: known };
+    const job: MediaFrameJob = { assetId: asset.id, time: at };
+    await ctx.queue.send(QUEUES.mediaFrame, job, { retryLimit: 1, retryDelay: 2, expireInSeconds: 120 });
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 300));
+      const fresh = await ctx.db.query.mediaAssets.findFirst({ where: eq(mediaAssets.id, id), columns: { metadataJson: true } });
+      const frame = fresh?.metadataJson.frames?.find(same);
+      if (frame) return { frame };
+    }
+    throw new HttpError(504, "FRAME_TIMEOUT", "The frame is taking longer than expected. Is the worker running? Try again in a moment.");
   });
 
   app.get<{ Querystring: { workspaceId?: string } }>("/api/v1/media", async (req) => {

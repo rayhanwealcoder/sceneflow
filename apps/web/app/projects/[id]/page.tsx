@@ -306,7 +306,7 @@ export default function ProjectPage() {
               </button>
             )}
             {project.publishedVersion && (
-              <a className="btn" href={`${API_URL}/demo/${project.id}`} target="_blank" rel="noreferrer">
+              <a className="btn" href={`${API_URL}/demo/${project.id}?v=${project.publishedVersion}`} target="_blank" rel="noreferrer">
                 Open live preview ↗
               </a>
             )}

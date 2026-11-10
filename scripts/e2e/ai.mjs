@@ -64,7 +64,8 @@ await page.click("[data-testid=ai-build]");
 await page.waitForFunction((n) => document.querySelectorAll(".ed-scene").length === n, sceneCards, { timeout: 10000 });
 check(`script written (${sceneCards} scenes) and built into the project`);
 
-// Voiceover for every scene with the server's voice; the worker turns each one into an m4a.
+// Voiceover (optional, behind the "🎙 Voice" link) for every scene with the server's voice; the worker turns each one into an m4a.
+await page.click("[data-testid=ai-voice-open]");
 await page.waitForSelector("[data-testid=ai-voice-all]", { timeout: 10000 });
 const voiceOptions = await page.locator("[data-testid=ai-voice] option").count();
 if (voiceOptions < 1) fail("no voice offered");

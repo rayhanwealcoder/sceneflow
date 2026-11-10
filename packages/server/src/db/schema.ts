@@ -389,6 +389,14 @@ export interface MediaRendition {
   sizeBytes: number;
 }
 
+/** A still extracted from a video at `time` seconds. */
+export interface MediaFrame {
+  time: number;
+  url: string;
+}
+/** How many extracted stills an asset keeps (older ones are dropped from the list, the files stay). */
+export const MAX_FRAMES = 24;
+
 export interface MediaMetadata {
   duration?: number;
   width?: number;
@@ -404,6 +412,8 @@ export interface MediaMetadata {
   /** JSON with normalized peaks for timeline waveforms. */
   waveformUrl?: string;
   thumbnails?: string[];
+  /** Full-size stills the editor asked for (custom thumbnails), newest last; at most `MAX_FRAMES`. */
+  frames?: MediaFrame[];
   /** Current processing step, for the UI ("Encoding 1080p…"). */
   progress?: { stage: string; percent: number };
   /**

@@ -1,6 +1,6 @@
 import { parseProject, type Project } from "@sceneflow/schema";
 import { describe, expect, it } from "vitest";
-import { audioFilterGraph, audioPlan, bestSource, exportConfig, exportDimensions, exportFileName, exportOptionsFor, projectDuration, resolveExportDevice } from "./plan.js";
+import { audioFilterGraph, audioPlan, bestSource, exportConfig, exportDimensions, exportDuration, exportFileName, exportOptionsFor, exportSpeed, projectDuration, resolveExportDevice, tempoFilters } from "./plan.js";
 
 function project(extra: Record<string, unknown>): Project {
   const r = parseProject({ schemaVersion: "1.0", projectId: "p", version: 1, scenes: [], ...extra });
@@ -112,6 +112,24 @@ describe("export plan", () => {
     expect(parts[2]).toBe("[a0][a1]amix=inputs=2:duration=first:dropout_transition=0,volume=2,alimiter=limit=0.95:level=0[aout]");
     // One cue needs no mixer.
     expect(audioFilterGraph([cues[0]!], 8)).toEqual({ filter: parts[0], out: "[a0]" });
+  });
+
+  it("exports at the playback speed: shorter file, audio tempo-shifted, scroll projects at 1×", () => {
+    const fast = project({ playback: { mode: "normal", speed: 2 }, video: { provider: "local", assetId: "a1", src: "https://m/a1/v.mp4", duration: 8 }, scenes: [{ id: "s", name: "S", start: 0, end: 8, background: { type: "video", assetId: "a1", sourceStart: 0 }, layers: [{ id: "vo", type: "audio", frame: { x: 0, y: 0, w: 1, h: 1 }, start: 2, src: "https://m/vo.m4a", content: {} }] }] });
+    expect(exportSpeed(fast)).toBe(2);
+    expect(exportDuration(fast)).toBe(4);
+    expect(exportConfig(fast).playback.speed).toBe(2);
+    const g = audioFilterGraph(audioPlan(fast, 8), 4, 2);
+    expect(g.filter.split(";")[0]).toContain("asetpts=PTS-STARTPTS,atempo=2,aformat=");
+    expect(g.filter.split(";")[1]).toContain("adelay=1000|1000,apad,atrim=0:4");
+    expect(tempoFilters(1)).toEqual([]);
+    expect(tempoFilters(0.25)).toEqual(["atempo=0.5", "atempo=0.5"]);
+    expect(tempoFilters(3)).toEqual(["atempo=2", "atempo=1.5"]);
+    expect(tempoFilters(0.75)).toEqual(["atempo=0.75"]);
+    // A scroll project plays through at 1× whatever speed says.
+    const scroll = project({ playback: { mode: "scroll", speed: 2 }, scenes: [{ id: "s", name: "S", start: 0, end: 6, background: { type: "color", color: "#000" } }] });
+    expect(exportSpeed(scroll)).toBe(1);
+    expect(exportConfig(scroll).playback.speed).toBe(1);
   });
 
   it("names the file after the project, ASCII only", () => {

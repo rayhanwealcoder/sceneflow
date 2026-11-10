@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState, useRef } from "react";
 
 export interface TourStep {
   /** Value of a `data-tour` attribute somewhere on the page. */
@@ -18,6 +18,7 @@ const PAD = 8;
  */
 export function Tour({ steps, index, onIndex, onClose }: { steps: TourStep[]; index: number; onIndex: (i: number) => void; onClose: (finished: boolean) => void }) {
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const scrolledFor = useRef<string | null>(null);
   const step = steps[index];
 
   // Measure the target; skip steps whose target is not on screen (e.g. a panel hidden in Simple mode).
@@ -31,7 +32,11 @@ export function Tour({ steps, index, onIndex, onClose }: { steps: TourStep[]; in
     }
     const measure = () => setRect(el.getBoundingClientRect());
     measure();
-    el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    // Scroll the target into view once per step — not on every re-render of the editor, which would yank the panels back while the person scrolls or uses a dialog.
+    if (scrolledFor.current !== step.target) {
+      scrolledFor.current = step.target;
+      el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => {

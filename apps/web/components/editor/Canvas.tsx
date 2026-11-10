@@ -81,6 +81,8 @@ export function Canvas() {
         return;
       }
       if (playing) {
+        const rate = project.playback.mode === "scroll" ? 1 : project.playback.speed ?? 1;
+        if (v.playbackRate !== rate) v.playbackRate = rate;
         if (Math.abs(v.currentTime - want) > 0.25) v.currentTime = want;
         if (v.paused) void v.play().catch(() => {});
       } else {

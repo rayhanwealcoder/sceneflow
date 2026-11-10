@@ -39,7 +39,7 @@ function tourSteps(project: Project): TourStep[] {
     { target: "elements", title: "Add elements", body: "Text, buttons, images, hotspots, a product card… click one and it lands on the canvas with sensible defaults.", placement: "right" },
     { target: "presets", title: "Ready-made pieces", body: "Starter presets drop in a headline, a call to action, a lower third or a whole scene. Save your own with ★ in the right panel and reuse them in every video.", placement: "right" },
     { target: "inspector", title: "Everything about the selected element lives here", body: "Content, style, position, motion and what happens on click. Nothing is hidden in menus.", placement: "left" },
-    { target: "ai", title: "Let AI draft it", body: "Describe the video and get a script with scenes, better copy for any element, a voiceover per scene and captions. Everything it makes is normal content you can edit — Ctrl+Z undoes any step.", placement: "bottom" },
+    { target: "ai", title: "Let AI draft it", body: "Describe the video and get a script with scenes, better copy for any element, and captions. A spoken voice is optional. Everything it makes is normal content you can edit — Ctrl+Z undoes any step.", placement: "bottom" },
   ];
   if (hasProduct) steps.push({ target: "inspector", title: "Pick your product", body: "Select the product card on the canvas, then “Choose a product”. With WooCommerce connected you get live prices and real add-to-cart; otherwise add a product with a link.", placement: "left" });
   steps.push(

@@ -4,7 +4,7 @@ Tags: video, interactive video, shoppable video, woocommerce, gutenberg
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.5.0
+Stable tag: 0.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -53,6 +53,17 @@ No. Without WooCommerce, product cards and buttons open the product link you set
 Yes. Published configurations are stored in your database and served from your site; only the media files load from SceneFlow's storage.
 
 == Changelog ==
+
+= 0.6.0 =
+* Scroll-scrub videos now pin reliably on every theme: the player picks the pinning technique the page allows (CSS sticky, position fixed through overflow-clipping wrappers, or a per-frame transform inside smooth-scroll themes such as GSAP ScrollSmoother / Lenis, where sticky and fixed cannot work) and reads its position from the page itself, so the picture and the scroll never disagree.
+* New scroll options from the editor: pin position (top / centre / bottom) with an offset for fixed headers, GSAP-style start / end triggers for unpinned videos, test markers, and a smoother catch-up curve.
+* Page speed: the plugin prints resource hints for each player — preconnect to the media host, preload of the thumbnail and of the config JSON — so the first picture appears before the deferred runtime has even run.
+* Runtime 0.6.0: custom thumbnail (`poster`), playback speed, player background (blend into the page), the new scroll engine.
+
+= 0.5.1 =
+* Fixed: a published video did not render on the site when one of its elements had no styling or content of its own (the config was re-encoded with empty PHP arrays where the player expects objects). The stored config is now served exactly as published.
+* A freshly published version shows on the next page load even when the browser or a page cache kept the previous config for a minute: the player's config URL now carries the published version number.
+* Runtime 0.5.1: tolerates configs that passed through a PHP JSON round trip.
 
 = 0.5.0 =
 * Runtime 0.5.0: captions (subtitles) on published videos with a CC button for visitors; the choice is remembered in the visitor's browser only. Nothing new is sent anywhere.

@@ -6,10 +6,16 @@ import PgBoss from "pg-boss";
  * within seconds; `media.renditions` does the slow device renditions afterwards (worker offloading, doc 11.1);
  * `export.render` renders MP4 exports (headless Chrome + FFmpeg), one at a time.
  */
-export const QUEUES = { mediaProcess: "media.process", mediaRenditions: "media.renditions", exportRender: "export.render" } as const;
+export const QUEUES = { mediaProcess: "media.process", mediaRenditions: "media.renditions", mediaFrame: "media.frame", exportRender: "export.render" } as const;
 
 export interface MediaProcessJob {
   assetId: string;
+}
+
+/** One full-size still from a video at `time` seconds (custom thumbnail / poster). */
+export interface MediaFrameJob {
+  assetId: string;
+  time: number;
 }
 
 export interface MediaRenditionsJob {

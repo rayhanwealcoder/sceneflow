@@ -134,7 +134,19 @@ export function PlacementPanel({ project, site }: { project: Project; site: Site
       <div className="row">
         <label className="field" style={{ flex: 1, minWidth: 220 }}>
           Page
-          <input className="input sm" placeholder="Search pages…" value={search} onChange={(e) => setSearch(e.target.value)} list="sf-pages" onBlur={() => setPage(pages.find((p) => p.title === search || p.url === search) ?? page)} />
+          <input
+            className="input sm"
+            placeholder="Search pages…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            list="sf-pages"
+            onBlur={() => {
+              // Resolve what was typed/picked from the list: by URL, or by title when exactly one page has it (duplicate titles are chosen from the chips below).
+              const byUrl = pages.find((p) => p.url === search);
+              const byTitle = pages.filter((p) => p.title === search);
+              setPage(byUrl ?? (byTitle.length === 1 ? byTitle[0]! : page));
+            }}
+          />
           <datalist id="sf-pages">
             {pages.map((p) => (
               <option key={`${p.type}-${p.id}-${p.url}`} value={p.title} />
@@ -149,11 +161,16 @@ export function PlacementPanel({ project, site }: { project: Project; site: Site
       </div>
       {pages.length > 0 && !page && (
         <div className="row small" style={{ gap: 6 }}>
-          {pages.slice(0, 6).map((p) => (
-            <button key={`${p.type}-${p.id}`} className="btn sm" onClick={() => { setPage(p); setSearch(p.title); }}>
-              {p.title}
-            </button>
-          ))}
+          {pages.slice(0, 6).map((p) => {
+            const duplicate = pages.some((o) => o !== p && o.title === p.title);
+            return (
+              // mousedown is prevented so the search box keeps focus: its blur handler must not pick a page before this click lands.
+              <button key={`${p.type}-${p.id}`} className="btn sm" title={p.url} onMouseDown={(e) => e.preventDefault()} onClick={() => { setPage(p); setSearch(p.title); }}>
+                {p.title}
+                {duplicate && <span className="muted"> · {p.path || p.url.replace(/^https?:\/\/[^/]+/, "")}</span>}
+              </button>
+            );
+          })}
         </div>
       )}
       {page && (

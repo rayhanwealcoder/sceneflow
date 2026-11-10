@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
-import { createDb, createQueue, createStorage, QUEUES, storageConfigFromEnv, storageEnvSchema, type ExportRenderJob, type MediaProcessJob, type MediaRenditionsJob, type PgBoss } from "@sceneflow/server";
+import { createDb, createQueue, createStorage, QUEUES, storageConfigFromEnv, storageEnvSchema, type ExportRenderJob, type MediaFrameJob, type MediaProcessJob, type MediaRenditionsJob, type PgBoss } from "@sceneflow/server";
 import { z } from "zod";
 import { renderExport } from "./export.js";
-import { processMedia, processRenditions } from "./process.js";
+import { extractFrame, processMedia, processRenditions } from "./process.js";
 
 const env = z
   .object({
@@ -65,6 +65,17 @@ await boss.work<MediaRenditionsJob>(
   }),
 );
 
+// Custom thumbnails: a single still, answered within a second or two while the editor waits.
+await boss.work<MediaFrameJob>(
+  QUEUES.mediaFrame,
+  { batchSize: 2, pollingIntervalSeconds: 1 },
+  parallel<MediaFrameJob>(QUEUES.mediaFrame, async (data) => {
+    const started = Date.now();
+    const f = await extractFrame({ db, storage }, data.assetId, data.time);
+    console.log(`[worker] frame ${data.assetId} @ ${f.time}s in ${Date.now() - started}ms`);
+  }),
+);
+
 // MP4 exports: one at a time — a headless Chrome plus x264 keeps every core busy on their own.
 await boss.work<ExportRenderJob>(
   QUEUES.exportRender,
@@ -76,7 +87,7 @@ await boss.work<ExportRenderJob>(
     console.log(`[worker] export done ${data.exportId}: ${r.frames} frames in ${r.renderMs}ms (${(r.frames / (r.renderMs / 1000)).toFixed(1)} fps), ${(r.sizeBytes / 1024 / 1024).toFixed(1)} MB, ${r.durationSec.toFixed(1)}s${r.slowFrames ? `, ${r.slowFrames} slow frame(s)` : ""}${r.pageErrors.length ? `, page errors: ${r.pageErrors.join(" | ").slice(0, 300)}` : ""}; total ${Date.now() - started}ms`);
   }),
 );
-console.log(`[worker] listening on "${QUEUES.mediaProcess}" (x${env.WORKER_CONCURRENCY}), "${QUEUES.mediaRenditions}" (x1) and "${QUEUES.exportRender}" (x1), storage: ${storage.id}`);
+console.log(`[worker] listening on "${QUEUES.mediaProcess}" (x${env.WORKER_CONCURRENCY}), "${QUEUES.mediaRenditions}" (x1), "${QUEUES.mediaFrame}" (x2) and "${QUEUES.exportRender}" (x1), storage: ${storage.id}`);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {

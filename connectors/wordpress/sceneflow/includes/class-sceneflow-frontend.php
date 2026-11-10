@@ -19,8 +19,87 @@ class SceneFlow_Frontend {
 		add_action( 'wp_enqueue_scripts', array( $this, 'register_assets' ), 5 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_placements' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'maybe_picker' ) );
+		add_action( 'wp_head', array( $this, 'print_placement_hints' ), 2 );
 		add_action( 'template_redirect', array( $this, 'maybe_preview_page' ) );
 		add_shortcode( 'sceneflow', array( $this, 'shortcode' ) );
+	}
+
+	/**
+	 * Projects whose resource hints were already printed on this page.
+	 *
+	 * @var array<string, bool>
+	 */
+	private static $hinted = array();
+
+	/**
+	 * Resource hints for one player (page speed): preconnect to the media host, preload the thumbnail (it is the
+	 * largest thing above the fold) and the config JSON (otherwise it is only requested once the deferred runtime
+	 * has run). All three are `<link>` elements browsers accept in the body, so the shortcode can print them inline.
+	 *
+	 * @param string $project_id Project id.
+	 * @return string HTML, '' when nothing is known about the project or the hints were printed already.
+	 */
+	public static function resource_hints( $project_id ) {
+		if ( isset( self::$hinted[ $project_id ] ) || ! SceneFlow_Config::is_valid_id( $project_id ) ) {
+			return '';
+		}
+		$stored = SceneFlow_Store::get_project( $project_id );
+		if ( ! $stored || '' !== self::preview_token_for( $project_id ) ) {
+			return '';
+		}
+		self::$hinted[ $project_id ] = true;
+		$config                      = SceneFlow_Config::decode_for_output( $stored['config_json'] );
+		$html                        = '<link rel="preload" as="fetch" crossorigin="anonymous" href="' . esc_url( self::config_url( $project_id ) ) . '">';
+		if ( ! is_object( $config ) ) {
+			return $html;
+		}
+		$first  = isset( $config->scenes[0]->background ) ? $config->scenes[0]->background : null;
+		$poster = '';
+		if ( ! empty( $config->poster ) ) {
+			$poster = (string) $config->poster;
+		} elseif ( ! empty( $config->video->poster ) ) {
+			$poster = (string) $config->video->poster;
+		} elseif ( $first && ! empty( $first->poster ) ) {
+			$poster = (string) $first->poster;
+		} elseif ( $first && isset( $first->type ) && 'image' === $first->type && ! empty( $first->src ) ) {
+			$poster = (string) $first->src;
+		}
+		$media  = ! empty( $config->video->src ) ? (string) $config->video->src : ( $first && ! empty( $first->src ) ? (string) $first->src : $poster );
+		$origin = self::origin_of( $media );
+		if ( $origin && self::origin_of( home_url( '/' ) ) !== $origin ) {
+			// Two connections: images and video elements use a plain one, the runtime's CORS fetch of the scrub file another.
+			$html .= '<link rel="preconnect" href="' . esc_url( $origin ) . '"><link rel="preconnect" href="' . esc_url( $origin ) . '" crossorigin>';
+		}
+		if ( $poster ) {
+			$html .= '<link rel="preload" as="image" fetchpriority="high" href="' . esc_url( $poster ) . '">';
+		}
+		return $html;
+	}
+
+	/**
+	 * Origin (scheme://host[:port]) of a URL, or '' when it is not an absolute http(s) URL.
+	 *
+	 * @param string $url URL.
+	 * @return string
+	 */
+	private static function origin_of( $url ) {
+		$p = wp_parse_url( (string) $url );
+		if ( empty( $p['scheme'] ) || empty( $p['host'] ) || ! in_array( $p['scheme'], array( 'http', 'https' ), true ) ) {
+			return '';
+		}
+		return $p['scheme'] . '://' . $p['host'] . ( ! empty( $p['port'] ) ? ':' . (int) $p['port'] : '' );
+	}
+
+	/**
+	 * Hints for element placements go in the head (they are known before the page renders).
+	 */
+	public function print_placement_hints() {
+		if ( is_admin() || ! empty( $_GET['sceneflow_pick'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flag.
+			return;
+		}
+		foreach ( $this->placements_for_request() as $p ) {
+			echo self::resource_hints( $p['projectId'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built from escaped parts in resource_hints().
+		}
 	}
 
 	/**
@@ -100,7 +179,13 @@ class SceneFlow_Frontend {
 	 */
 	public static function config_url( $project_id ) {
 		$token = self::preview_token_for( $project_id );
-		return $token ? rest_url( SceneFlow_REST::NS . '/preview/' . $token ) : rest_url( SceneFlow_REST::NS . '/project/' . rawurlencode( $project_id ) );
+		if ( $token ) {
+			return rest_url( SceneFlow_REST::NS . '/preview/' . $token );
+		}
+		$url    = rest_url( SceneFlow_REST::NS . '/project/' . rawurlencode( $project_id ) );
+		$stored = SceneFlow_Store::get_project( $project_id );
+		// The config answer may be cached for a minute (browser / page cache); the published version in the URL makes a fresh publish show on the very next page load.
+		return $stored && ! empty( $stored['version'] ) ? add_query_arg( 'v', (int) $stored['version'], $url ) : $url;
 	}
 
 	/**
@@ -124,7 +209,7 @@ class SceneFlow_Frontend {
 		self::enqueue_runtime();
 		// Only a plain CSS length is accepted, so a shortcode attribute can never inject other declarations.
 		$style = SceneFlow_Config::is_valid_css_length( $max_width ) ? ' style="max-width:' . esc_attr( $max_width ) . ';margin-left:auto;margin-right:auto"' : '';
-		return '<div class="sceneflow-player ' . esc_attr( $css_class ) . '" data-sceneflow-id="' . esc_attr( $project_id ) . '" data-sceneflow-config="' . esc_url( self::config_url( $project_id ) ) . '"' . $style . '></div>';
+		return self::resource_hints( $project_id ) . '<div class="sceneflow-player ' . esc_attr( $css_class ) . '" data-sceneflow-id="' . esc_attr( $project_id ) . '" data-sceneflow-config="' . esc_url( self::config_url( $project_id ) ) . '"' . $style . '></div>';
 	}
 
 	/**

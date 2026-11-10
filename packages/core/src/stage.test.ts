@@ -6,7 +6,7 @@ const project: Project = {
   schemaVersion: "1.0",
   projectId: "p",
   version: 1,
-  canvas: { aspectRatio: "16:9" },
+  canvas: { aspectRatio: "16:9", background: "#000" },
   playback: playbackSchema.parse({ mode: "normal" }),
   scenes: [
     {

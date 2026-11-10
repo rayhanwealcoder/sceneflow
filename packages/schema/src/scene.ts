@@ -7,17 +7,25 @@ import { safeUrl } from "./url.js";
 const id = z.string().min(1).max(64);
 /** Normalized percentage relative to the frame (0-100 = inside the frame). */
 const pct = z.number().min(-100).max(200);
-const styleMap = z.record(z.string().max(64), z.union([z.string().max(256), z.number()]));
+/**
+ * Configs that pass through PHP (the WordPress plugin, any PHP host) come back with `[]` where an empty `{}` was
+ * published, because PHP decodes objects to associative arrays. Treat an empty array as an empty object wherever an
+ * object with only optional keys is expected, so such a round trip never breaks a player.
+ */
+const phpObject = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (Array.isArray(v) && v.length === 0 ? {} : v), schema);
+const styleMap = phpObject(z.record(z.string().max(64), z.union([z.string().max(256), z.number()])));
 
 export const frameSchema = z.object({ x: pct, y: pct, w: pct, h: pct, rotation: z.number().default(0) });
 export type Frame = z.infer<typeof frameSchema>;
 
 /** Responsive overrides: only fields that differ from desktop. */
-export const layerOverrideSchema = z.object({
-  frame: frameSchema.partial().optional(),
-  hidden: z.boolean().optional(),
-  style: styleMap.optional(),
-});
+export const layerOverrideSchema = phpObject(
+  z.object({
+    frame: frameSchema.partial().optional(),
+    hidden: z.boolean().optional(),
+    style: styleMap.optional(),
+  }),
+);
 
 export const ANIMATION_TYPES = ["fade", "slide-up", "slide-down", "slide-left", "slide-right", "zoom"] as const;
 export type AnimationType = (typeof ANIMATION_TYPES)[number];
@@ -50,7 +58,7 @@ export const layerSchema = z.object({
   end: z.number().min(0).optional(),
   locked: z.boolean().default(false),
   hidden: z.boolean().default(false),
-  content: z.record(z.string().max(64), z.union([z.string().max(5000), z.number(), z.boolean()])).default({}),
+  content: phpObject(z.record(z.string().max(64), z.union([z.string().max(5000), z.number(), z.boolean()]))).default({}),
   /** Media asset this layer was created from (image/audio), for pickers and waveforms. */
   assetId: z.string().max(64).optional(),
   src: safeUrl.optional(),
@@ -59,7 +67,7 @@ export const layerSchema = z.object({
   /** Product shown by a `product` layer (card with image, title, price, variant/quantity and a button). */
   product: productRefSchema.optional(),
   animation: layerAnimationSchema.optional(),
-  responsive: z.object({ tablet: layerOverrideSchema.optional(), mobile: layerOverrideSchema.optional() }).optional(),
+  responsive: phpObject(z.object({ tablet: layerOverrideSchema.optional(), mobile: layerOverrideSchema.optional() })).optional(),
   preset: presetRefSchema.optional(),
 });
 

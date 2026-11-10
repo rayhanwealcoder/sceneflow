@@ -181,7 +181,7 @@ export function createEmptyProject(projectId: string): Project {
     schemaVersion: "1.0",
     projectId,
     version: 1,
-    canvas: { aspectRatio: "16:9" },
+    canvas: { aspectRatio: "16:9", background: "#000" },
     playback: playbackSchema.parse({ mode: "click" }),
     scenes: [createScene(1, 0, 5)],
   };

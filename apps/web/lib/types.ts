@@ -261,6 +261,8 @@ export interface MediaMetadata {
   audioUrl?: string;
   waveformUrl?: string;
   thumbnails?: string[];
+  /** Full-size stills taken for custom thumbnails. */
+  frames?: { time: number; url: string }[];
   progress?: { stage: string; percent: number };
   renditions?: { status: "pending" | "ready" | "failed" | "skipped"; items: MediaRendition[]; error?: string };
 }

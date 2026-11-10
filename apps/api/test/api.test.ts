@@ -175,6 +175,38 @@ describe("media upload", () => {
 });
 
 describe("publish-time media resolution + diagnostics", () => {
+  it("hands out a video frame for a custom thumbnail: known frames at once, unprocessed videos refused", async () => {
+    const { cookies, workspaceId } = await register();
+    const up = await app.inject({ method: "POST", url: "/api/v1/media/uploads", cookies, payload: { workspaceId, filename: "hero.mp4", mimeType: "video/mp4", sizeBytes: 10 } });
+    const assetId = up.json().assetId as string;
+    const url = new URL(up.json().upload.url);
+    await app.inject({ method: "PUT", url: url.pathname + url.search, headers: { "content-type": "video/mp4" }, payload: Buffer.alloc(10) });
+    // Still "uploaded" (no worker in this test): no frames yet.
+    const early = await app.inject({ method: "POST", url: `/api/v1/media/${assetId}/frame`, cookies, payload: { time: 2 } });
+    expect(early.statusCode).toBe(409);
+    const { mediaAssets, createDb } = await import("@sceneflow/server");
+    const { eq } = await import("drizzle-orm");
+    const conn = createDb(process.env.DATABASE_URL_TEST ?? "postgresql://postgres:sceneflow_dev@localhost:5432/sceneflow_test");
+    await conn.db
+      .update(mediaAssets)
+      .set({ status: "ready", metadataJson: { duration: 12, width: 1920, height: 1080, frames: [{ time: 2, url: "http://localhost:4800/files/x/frame-2000.jpg" }] } })
+      .where(eq(mediaAssets.id, assetId));
+    await conn.close();
+    queue.send.mockClear();
+    // A frame the worker already produced comes straight back, nothing is queued.
+    const known = await app.inject({ method: "POST", url: `/api/v1/media/${assetId}/frame`, cookies, payload: { time: 2 } });
+    expect(known.statusCode).toBe(200);
+    expect(known.json().frame).toEqual({ time: 2, url: "http://localhost:4800/files/x/frame-2000.jpg" });
+    expect(queue.send).not.toHaveBeenCalled();
+    // Times are clamped into the video; a request past the end asks for the last moment.
+    const bad = await app.inject({ method: "POST", url: `/api/v1/media/${assetId}/frame`, cookies, payload: { time: -1 } });
+    expect(bad.statusCode).toBe(400);
+    // Another workspace's member cannot take frames from this video.
+    const stranger = await register("Stranger");
+    const denied = await app.inject({ method: "POST", url: `/api/v1/media/${assetId}/frame`, cookies: stranger.cookies, payload: { time: 2 } });
+    expect(denied.statusCode).toBe(403);
+  });
+
   it("attaches renditions to the published config and explains what is missing", async () => {
     const { cookies, workspaceId } = await register();
     // A "processed" video asset with renditions, as the worker would leave it.

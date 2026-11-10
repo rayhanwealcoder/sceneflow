@@ -16,10 +16,11 @@ import type { AiStatus, MediaAsset } from "@/lib/types";
  * Everything it produces is ordinary project content; Ctrl+Z undoes any step.
  */
 
+// Voice is deliberately not a main tab: most videos use the customer's own footage and sound. It stays reachable
+// behind a small "optional" link and from the scene panel.
 const TABS: Array<{ id: AiTab; label: string }> = [
   { id: "script", label: "Script" },
   { id: "copy", label: "Copy" },
-  { id: "voiceover", label: "Voiceover" },
   { id: "captions", label: "Captions" },
 ];
 const TONE_LABEL: Record<AiTone, string> = { friendly: "Friendly", confident: "Confident", playful: "Playful", premium: "Premium", urgent: "Urgent", calm: "Calm" };
@@ -55,9 +56,12 @@ export function AiPanel({ projectId, workspaceId, onNotice }: { projectId: strin
               {t.label}
             </button>
           ))}
+          <button className={ai.tab === "voiceover" ? "on" : ""} onClick={() => openAi("voiceover")} type="button" role="tab" aria-selected={ai.tab === "voiceover"} style={{ marginLeft: "auto", opacity: ai.tab === "voiceover" ? 1 : 0.65, fontSize: 12 }} title="Optional: read each scene's line with a voice" data-testid="ai-voice-open">
+            🎙 Voice (optional)
+          </button>
         </div>
         {statusError && <div className="alert error small">{statusError}</div>}
-        {ai.tab === "script" && <ScriptTab projectId={projectId} status={status} onDone={(n) => { onNotice(`Built ${n} scene${n === 1 ? "" : "s"} from the script. Ctrl+Z undoes it. Next: give it a voice.`); openAi("voiceover"); }} />}
+        {ai.tab === "script" && <ScriptTab projectId={projectId} status={status} onDone={(n) => { onNotice(`Built ${n} scene${n === 1 ? "" : "s"} from the script. Ctrl+Z undoes it. Next: captions, or keep editing.`); openAi("captions"); }} />}
         {ai.tab === "copy" && <CopyTab projectId={projectId} status={status} />}
         {ai.tab === "voiceover" && <VoiceoverTab projectId={projectId} status={status} />}
         {ai.tab === "captions" && <CaptionsTab projectId={projectId} workspaceId={workspaceId} status={status} />}
@@ -190,7 +194,7 @@ function ScriptTab({ projectId, status, onDone }: { projectId: string; status: A
             <button className="btn" onClick={() => build("append")}>
               Add after my scenes
             </button>
-            <span className="small muted">Headline, subline and button per scene; the voiceover lines wait in the next tab.</span>
+            <span className="small muted">Headline, subline and button per scene. Captions come from the lines; a spoken voice is optional (🎙 Voice).</span>
           </div>
         </div>
       )}
@@ -558,7 +562,7 @@ function CaptionsTab({ projectId, workspaceId, status }: { projectId: string; wo
           ))}
         </div>
       ) : (
-        <p className="muted small" style={{ margin: 0 }}>No captions yet. {hasScript ? "Click “Create from script”." : "Write voiceover lines first (Voiceover tab), then create captions from them."}</p>
+        <p className="muted small" style={{ margin: 0 }}>No captions yet. {hasScript ? "Click “Create from script”." : "Give a scene a spoken line first (scene panel → “Spoken line”), then create captions from it."}</p>
       )}
       {cues.length > 0 && project.scenes.some((s) => s.script?.voiceover) && captionsFromScript(project).cues.length !== cues.length && caps?.source === "script" && <p className="small muted" style={{ margin: 0 }}>Scenes changed since these captions were made — “Create from script” re-times them.</p>}
     </div>

@@ -40,7 +40,9 @@ export const RUNTIME_CSS = `
 .sf-play:hover{transform:scale(1.06)}
 .sf-player[data-sf-state=playing] .sf-play{opacity:0;pointer-events:none}
 .sf-scroll{position:relative;width:100%}
-.sf-player.sf-pinned{position:sticky;top:0}
+.sf-player[data-sf-pin=sticky]{position:sticky;top:0}
+.sf-player[data-sf-pin=transform]{will-change:transform}
+.sf-player[data-sf-pin=fixed][data-sf-pin-phase=pinned]{z-index:1}
 .sf-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.25);z-index:5}
 .sf-progress>i{display:block;height:100%;width:0;background:#fff}
 .sf-captions{--sf-scale:1;position:absolute;left:50%;bottom:7%;transform:translateX(-50%);max-width:84%;box-sizing:border-box;background:rgba(0,0,0,.72);color:#fff;padding:.3em .7em;border-radius:.3em;font:600 calc(24px*var(--sf-scale))/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.6);white-space:pre-wrap;z-index:4;pointer-events:none}

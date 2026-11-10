@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { exportFileName, exportOptionsFor, exportRequestSchema, LocalStorageProvider, MAX_EXPORT_SECONDS, projectDuration, projectVersions, QUEUES, videoExports, type ExportRenderJob } from "@sceneflow/server";
+import { exportDuration, exportFileName, exportOptionsFor, exportRequestSchema, LocalStorageProvider, MAX_EXPORT_SECONDS, projectDuration, projectVersions, QUEUES, videoExports, type ExportRenderJob } from "@sceneflow/server";
 import { HttpError, type Ctx } from "../context.js";
 import { requireMember, requireUser } from "../lib/auth.js";
 import { resolvePublishedMedia } from "../lib/media.js";
@@ -50,7 +50,7 @@ export async function exportRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
     const config = await resolvePublishedMedia(ctx.db, version.configJson);
     const duration = projectDuration(config);
     if (!(duration > 0) || !config.scenes.length) throw new HttpError(422, "EXPORT_EMPTY", "This project has no scenes yet. Add a video or a template in the editor first.");
-    if (duration > MAX_EXPORT_SECONDS) throw new HttpError(422, "EXPORT_TOO_LONG", `Exports are limited to ${MAX_EXPORT_SECONDS / 60} minutes; this project is ${Math.round(duration)} seconds long.`);
+    if (duration > MAX_EXPORT_SECONDS) throw new HttpError(422, "EXPORT_TOO_LONG", `Exports are limited to ${MAX_EXPORT_SECONDS / 60} minutes; this project is ${Math.round(duration)} seconds long${exportDuration(config) !== duration ? ` (${Math.round(exportDuration(config))} s at its playback speed)` : ""}.`);
     const options = exportOptionsFor(config, body);
     const [row] = await ctx.db
       .insert(videoExports)

@@ -15,6 +15,11 @@ This guide has two halves: **using SceneFlow** (site owners, marketers) and **ru
 3. The editor opens with a short **tour** (6 steps). Skip it any time; the **Tour** button in the top bar brings it back.
 4. Click an empty spot on the canvas → *Background* → choose or upload your video. It is usable in seconds; HD versions finish in the background.
 5. Edit the texts, drag things around, swap the product. Everything autosaves.
+6. The **VIDEO** block in the right panel is where the look of the video itself lives: the **thumbnail** shown before play (*Pick a frame…* from the strip or an exact second, or *Use an image…* for a designed picture), whether **play controls** show, the **playback speed** (0.5×–2×) and what sits **behind the video** — choose *Blend into the page* and a clip shot on your page's colour sits there like a picture, nothing looks like a player.
+
+### Scroll-driven videos
+
+Pick *Scroll scrub* under Advanced → Playback and the video follows the visitor's scrolling, forwards and back — like the product pages of the big brands. The player **pins** itself while the page scrolls the *scroll length* you set (300vh = three screens), at the **top, centre or bottom** of the screen, with an **offset** for a fixed site header. It pins on any theme: the player works out by itself whether the page allows CSS sticky, needs a fixed position, or runs inside a smooth-scroll wrapper (GSAP ScrollSmoother, Lenis) and must move with the page. *Smoothness* turns wheel steps into glides; *Show scroll markers while testing* draws the start, end and pin lines on the page while you tune it. Without pinning, *Start when* / *End when* say where the scrub begins and ends as the player passes through the screen.
 
 ### 2. Set your brand once (optional, 2 minutes)
 
@@ -61,7 +66,7 @@ In the editor click **✨ AI**:
 
 - **Script** — say what the video is about and for whom, pick a length and tone, and you get scenes with a headline, a supporting line, a spoken line and a shot description (plus a ready prompt for an AI video tool). *Build these scenes* puts them on the canvas; Ctrl+Z undoes it.
 - **Copy** — select any text, button, badge or hotspot and get five alternatives (shorter, more urgent, benefit-led…). Click one to use it.
-- **Voiceover** — pick a voice, *Generate all scenes*. Each line becomes an audio track on its scene; the scene grows if the line is longer.
+- **Voice (optional)** — most videos keep their own sound, so this sits behind the small *🎙 Voice (optional)* link (and *Spoken line & voice* in the scene panel). Pick a voice, *Generate all scenes*: each line becomes an audio track on its scene; the scene grows if the line is longer.
 - **Captions** — made from the lines automatically (timed over the audio), editable word by word, shown on the published video with a CC button for visitors. Switch them off per project if you prefer.
 
 Everything works without any AI account: you get starter text to edit and the computer's built-in voice. Site owners add `ANTHROPIC_API_KEY` (real scripts and copy, written by Claude) and `ELEVENLABS_API_KEY` (natural voices, captions transcribed from audio) in `apps/api/.env`; the panel's *Setup notes* say exactly what each key adds.
@@ -116,6 +121,9 @@ pnpm build && pnpm dev  # web :3000, api :4800, worker
 | `node scripts/e2e/ai.mjs [--record]` | Real Chrome through the UI: AI script → scenes → voiceovers → captions → publish → player; `--record` writes `dist/walkthrough/sceneflow-walkthrough.mp4` |
 | `node scripts/e2e/agency.mjs` | Real Chrome, three browsers: owner adds client + invite → client reviews and approves through the link → publish → dashboard → colleague joins, comments with a pin and a mention |
 | `node scripts/e2e/export.mjs` | Uploads a clip + voice track, builds text / button / hotspot / captions / voiceover, renders a 720p MP4 through the UI, downloads it and checks it with ffprobe + frame samples (keeps `dist/e2e/export-e2e.mp4`) |
+| `node scripts/e2e/full-local.mjs [--headed --keep-open]` | One fresh account through the whole product in a real Chrome, WordPress included (see the Phase 11 changelog) |
+| `node scripts/e2e/make-demo-clip.mjs out.mp4 [--still out.png]` | Renders a professional-looking 1080p product clip (and a product still) with Chrome + FFmpeg — no stock footage |
+| `node scripts/e2e/wp-landing.mjs [--headed --keep-open]` | On development.local: the rendered clip, an autoplay hero with a WooCommerce card (thumbnail picked in the editor UI), a pinned scroll story, a designed landing page, the element picker UI, the shortcode, the visitor's view (hints, transparent players, add-to-cart), scroll pinning + smoothness on the theme and on the demo page, analytics, diagnostics |
 
 AI keys are optional (`apps/api/.env.example`, section "AI"): without them the API serves starter text and uses the operating system's voice (Windows / macOS built in; `espeak-ng` on Linux).
 

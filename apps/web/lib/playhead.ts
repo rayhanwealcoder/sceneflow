@@ -34,6 +34,11 @@ function followScene(t: number): void {
 }
 
 const total = () => projectDuration(useEditor.getState().project);
+/** Preview runs at the project's playback speed (scroll projects have no speed: the page is the clock). */
+const speed = () => {
+  const pb = useEditor.getState().project.playback;
+  return pb.mode === "scroll" ? 1 : pb.speed ?? 1;
+};
 
 export const usePlayhead = create<PlayheadState & PlayheadActions>()((set, get) => ({
   time: 0,
@@ -55,7 +60,7 @@ export const usePlayhead = create<PlayheadState & PlayheadActions>()((set, get) 
     const step = (now: number) => {
       if (!get().playing) return;
       const end = total();
-      const t = get().time + (now - last) / 1000;
+      const t = get().time + ((now - last) / 1000) * speed();
       last = now;
       if (t >= end) {
         set({ time: end, playing: false });

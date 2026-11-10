@@ -2,7 +2,7 @@ import { aspectRatioValue, cueAt, deviceFromWidth, isLayerVisibleAt, parseProjec
 import { commerce, linkAdapter, type CartLine, type CommerceAdapter, type CommerceResult } from "./commerce.js";
 import { Emitter, type EventMap } from "./emitter.js";
 import { Analytics, analyticsAllowed } from "./analytics.js";
-import { nextSeek, parseDistance, scrollProgress, smoothStep } from "./scroll.js";
+import { applyOffsets, nextSeek, parseDistance, pinAnchor, pinState, pinTypeFor, smoothStep, triggerPoint, triggerProgress, type AncestorStyle, type PinPhase, type PinState, type PinType } from "./scroll.js";
 import { browserProfile, pickSource } from "./sources.js";
 import { REF_WIDTH, Stage } from "./stage.js";
 import { ensureFonts, ensureStyles } from "./styles.js";
@@ -63,6 +63,14 @@ export class Player {
   private scrollTarget = 0;
   private scrollRaf = 0;
   private scrollLastTs = 0;
+  private pinType: PinType = "sticky";
+  private pinPhase: PinPhase | null = null;
+  /** Scrub travel in px (pinned) and the player's length along the scroll axis, measured in `layoutScroll`. */
+  private travel = 0;
+  private playerLength = 0;
+  private lastRectStart = NaN;
+  private quietFrames = 0;
+  private markerEls: HTMLElement[] = [];
   /** Latest media time a scrub asked for; applied when the in-flight seek lands (see `nextSeek`). */
   private seekWanted = NaN;
   private seekBound = new WeakSet<HTMLVideoElement>();
@@ -120,6 +128,9 @@ export class Player {
     this.emitter.emit("ready", undefined);
 
     if (this.effective === "poster") return;
+    // Scroll scrub: the pin engine runs from the start (the page must have its final height before the visitor
+    // gets there); the media itself still loads lazily, one screen ahead.
+    if (this.effective === "scroll") this.startScroll();
     if (this.options.lazy === false || typeof IntersectionObserver === "undefined") this.mountMedia();
     else this.observeViewport();
   }
@@ -162,6 +173,8 @@ export class Player {
     const playerEl = document.createElement("div");
     playerEl.className = "sf-player";
     playerEl.style.aspectRatio = String(aspectRatioValue(project.canvas.aspectRatio));
+    // "transparent" (or the page colour) lets the video sit in the page like a picture — no black box, no visible player.
+    if (project.canvas.background !== "#000") playerEl.style.background = project.canvas.background;
     playerEl.dataset.sfState = "ready";
     playerEl.dataset.sfMode = this.effective;
     const mediaEl = document.createElement("div");
@@ -190,10 +203,10 @@ export class Player {
     this.stage = new Stage(playerEl, { device: this.options.device ?? "auto", onAction: (a, l) => void this.handleAction(a, l) });
     this.mountCaptions(project, playerEl);
 
-    // Poster first: cheap paint before any media loads.
+    // Poster first: cheap paint before any media loads. A custom thumbnail (project.poster) wins over the video's own.
     const first = project.scenes[0] ?? null;
     this.currentScene = first;
-    if (this.mode === "base") this.showPoster(project.video?.poster);
+    if (this.mode === "base" || project.poster) this.showPoster(project.poster ?? project.video?.poster);
     else if (first) this.renderSceneBackground(first, false);
     if (first) {
       this.stage.render(project, first.id, 0);
@@ -317,7 +330,8 @@ export class Player {
           this.observer = null;
         }
       },
-      { rootMargin: "200px" },
+      // Scroll players start downloading a screen earlier: the scrub file should be whole before the first wheel tick.
+      { rootMargin: this.effective === "scroll" ? "150%" : "200px" },
     );
     this.observer.observe(this.scrollEl ?? this.playerEl);
   }
@@ -330,7 +344,7 @@ export class Player {
     const scroll = this.effective === "scroll";
     if (this.mode === "base" && p.video) {
       const src = this.pickFor(p.video.sources, p.video.src);
-      const v = this.createVideo(src, p.video.poster);
+      const v = this.createVideo(src, p.poster ?? p.video.poster);
       v.controls = scroll ? false : p.playback.controls;
       v.loop = this.effective === "loop";
       if (scroll) {
@@ -344,11 +358,13 @@ export class Player {
       v.addEventListener("ended", () => !scroll && this.finish());
       this.mediaEl.replaceChildren(v);
       this.video = v;
+      // The visitor may already be part-way through the scroll range when the file arrives.
+      if (scroll && this.time > 0) this.requestSeek(v, this.time);
     } else if (this.currentScene) {
       this.renderSceneBackground(this.currentScene, true);
     }
-    if (scroll) this.startScroll();
-    else if (this.effective === "autoplay") {
+    if (scroll) return;
+    if (this.effective === "autoplay") {
       if (this.video) this.video.muted = true;
       this.play();
     }
@@ -361,7 +377,14 @@ export class Player {
     v.preload = "metadata";
     v.playsInline = true;
     v.muted = this.project?.playback.muted ?? false;
+    const speed = this.speed();
+    if (speed !== 1) v.defaultPlaybackRate = v.playbackRate = speed;
     return v;
+  }
+
+  /** Playback rate (never in scroll mode, where the page is the clock). */
+  private speed(): number {
+    return this.effective === "scroll" ? 1 : this.project?.playback.speed ?? 1;
   }
 
   /** Device profile (doc 11.4): rendition for the player's rendered width, pixel density and connection. */
@@ -412,7 +435,7 @@ export class Player {
     } else if (bg.type === "video") {
       if (withMedia && bg.src) {
         const src = this.pickFor(bg.sources, bg.src);
-        const v = this.createVideo(src, bg.poster);
+        const v = this.createVideo(src, (scene === this.project?.scenes[0] ? this.project.poster : undefined) ?? bg.poster);
         if (this.effective === "scroll") {
           v.preload = "auto";
           v.muted = true;
@@ -697,7 +720,7 @@ export class Player {
     const bg = scene.background;
     let t = this.time;
     if (bg.type === "video" && this.video && this.video.readyState >= 2 && !this.video.paused) t = scene.start + (this.video.currentTime - bg.sourceStart);
-    else t += dt;
+    else t += dt * this.speed();
 
     if (t >= scene.end) {
       const idx = this.project.scenes.indexOf(scene);
@@ -760,6 +783,8 @@ export class Player {
         a.preload = "auto";
         const vol = Number(layer.content.volume);
         a.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
+        const speed = this.speed();
+        if (speed !== 1) a.defaultPlaybackRate = a.playbackRate = speed;
         this.audio.set(layer.id, a);
       }
       const want = t - scene.start - (layer.start ?? 0);
@@ -773,9 +798,16 @@ export class Player {
   }
 
   // ---------- scroll scrub ----------
+  //
+  // A ScrollTrigger-like engine without the library: the container (`.sf-scroll`) is as long as the player plus the
+  // scrub travel; the player is pinned at its anchor while the page scrolls through the travel. The technique is
+  // chosen per page — CSS sticky where the theme allows it, `position: fixed` through overflow-clipping wrappers,
+  // and a per-frame transform inside smooth-scroll wrappers (GSAP ScrollSmoother / Lenis, where the page itself is
+  // a transformed element and neither sticky nor fixed can work). Progress always comes from the container's
+  // on-screen rectangle, so the picture and the scrub agree even while such a wrapper is still gliding.
 
   private startScroll(): void {
-    if (!this.scrollEl || !this.project) return;
+    if (!this.scrollEl || !this.playerEl || !this.project) return;
     this.layoutScroll();
     window.addEventListener("scroll", this.onScroll, { passive: true });
     window.addEventListener("resize", this.onResize);
@@ -787,21 +819,42 @@ export class Player {
     window.removeEventListener("resize", this.onResize);
     if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.scrollRaf);
     this.scrollRaf = 0;
+    for (const m of this.markerEls) m.remove();
+    this.markerEls = [];
   }
 
+  private horizontal(): boolean {
+    return this.project?.playback.scrollAxis === "horizontal";
+  }
+
+  /** Sizes the container (player + travel), measures the player and picks the pin technique this page allows. */
   private layoutScroll(): void {
-    if (!this.scrollEl || !this.project) return;
-    const pb = this.project.playback;
-    const horizontal = pb.scrollAxis === "horizontal";
-    const viewport = horizontal ? window.innerWidth : window.innerHeight;
-    const distance = pb.pin ? parseDistance(pb.scrollDistance, viewport) : 0;
-    if (horizontal) {
-      this.scrollEl.style.width = distance ? `${distance}px` : "";
-      this.scrollEl.style.height = "";
+    const scrollEl = this.scrollEl;
+    const playerEl = this.playerEl;
+    const p = this.project;
+    if (!scrollEl || !playerEl || !p) return;
+    const pb = p.playback;
+    const h = this.horizontal();
+    const viewport = h ? window.innerWidth : window.innerHeight;
+    if (h) playerEl.style.width = `${scrollEl.parentElement?.clientWidth || viewport}px`;
+    this.playerLength = (h ? playerEl.offsetWidth : playerEl.offsetHeight) || (h ? viewport : viewport * 0.5625);
+    this.travel = pb.pin ? parseDistance(pb.scrollDistance, viewport) : 0;
+    // Any earlier pin geometry goes before measuring again.
+    playerEl.style.position = playerEl.style.top = playerEl.style.left = playerEl.style.bottom = playerEl.style.right = playerEl.style.transform = "";
+    if (!h) playerEl.style.width = "";
+    playerEl.style.height = "";
+    this.pinPhase = null;
+    if (pb.pin) {
+      this.pinType = pinTypeFor(ancestorStyles(scrollEl));
+      playerEl.dataset.sfPin = this.pinType;
+      scrollEl.style[h ? "width" : "height"] = `${Math.round(this.playerLength + this.travel)}px`;
+      scrollEl.style[h ? "height" : "width"] = "";
+      if (this.pinType === "sticky") playerEl.style[h ? "left" : "top"] = `${Math.round(pinAnchor({ viewport, playerLength: this.playerLength, pinPosition: pb.pinPosition, pinOffset: pb.pinOffset }))}px`;
     } else {
-      this.scrollEl.style.height = distance ? `${distance}px` : "";
-      this.scrollEl.style.width = "";
+      delete playerEl.dataset.sfPin;
+      scrollEl.style.height = scrollEl.style.width = "";
     }
+    this.renderMarkers(viewport);
   }
 
   private onResize = (): void => {
@@ -809,38 +862,117 @@ export class Player {
     this.onScroll();
   };
 
+  /** Scroll events are answered in the same task (no frame of lag); the loop then carries on from there. */
   private onScroll = (): void => {
-    if (!this.scrollEl || !this.project) return;
-    const pb = this.project.playback;
-    const horizontal = pb.scrollAxis === "horizontal";
-    const rect = this.scrollEl.getBoundingClientRect();
-    const scrollPos = horizontal ? window.scrollX : window.scrollY;
-    const progress = scrollProgress({
-      scrollPos,
-      containerStart: (horizontal ? rect.left : rect.top) + scrollPos,
-      containerLength: horizontal ? rect.width : rect.height,
-      viewport: horizontal ? window.innerWidth : window.innerHeight,
-      pin: pb.pin,
-      startOffset: pb.startOffset,
-      endOffset: pb.endOffset,
-    });
-    this.scrollTarget = progress * this.duration();
-    if (!this.scrollRaf) {
-      this.scrollLastTs = 0;
-      this.scrollTick();
-    }
+    this.quietFrames = 0;
+    if (this.scrollRaf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.scrollRaf);
+    this.scrollRaf = 0;
+    this.scrollTick();
   };
 
+  /**
+   * One frame: read the container's on-screen position, place the pin, smooth the clock toward the target and
+   * seek. Keeps running while the page is still moving (smooth-scroll themes glide after the last scroll event)
+   * or the clock is still catching up, then goes idle until the next scroll event.
+   */
   private scrollTick = (ts?: number): void => {
-    if (!this.project) return;
+    const scrollEl = this.scrollEl;
+    const playerEl = this.playerEl;
+    const p = this.project;
+    if (!scrollEl || !playerEl || !p) {
+      this.scrollRaf = 0;
+      return;
+    }
     const now = ts ?? performance.now();
     const dt = this.scrollLastTs ? now - this.scrollLastTs : 16.67;
     this.scrollLastTs = now;
-    const next = smoothStep(this.time, this.scrollTarget, this.project.playback.smoothness, dt);
-    this.applyScrubTime(next);
-    if (next !== this.scrollTarget && typeof requestAnimationFrame === "function") this.scrollRaf = requestAnimationFrame(this.scrollTick);
+    const pb = p.playback;
+    const h = this.horizontal();
+    const rect = scrollEl.getBoundingClientRect();
+    const start = h ? rect.left : rect.top;
+    const viewport = h ? window.innerWidth : window.innerHeight;
+    let raw: number;
+    if (pb.pin) {
+      const st = pinState({ containerStart: start, travel: this.travel, playerLength: this.playerLength, viewport, pinPosition: pb.pinPosition, pinOffset: pb.pinOffset });
+      this.applyPin(st, rect);
+      raw = st.progress;
+    } else raw = triggerProgress({ containerStart: start, playerLength: h ? rect.width : rect.height, viewport, start: pb.triggerStart, end: pb.triggerEnd });
+    this.scrollTarget = applyOffsets(raw, pb.startOffset, pb.endOffset) * this.duration();
+    const next = smoothStep(this.time, this.scrollTarget, pb.smoothness, dt);
+    if (next !== this.time) this.applyScrubTime(next);
+    const moving = start !== this.lastRectStart;
+    this.lastRectStart = start;
+    this.quietFrames = moving || next !== this.scrollTarget ? 0 : this.quietFrames + 1;
+    if (this.quietFrames < 6 && typeof requestAnimationFrame === "function") this.scrollRaf = requestAnimationFrame(this.scrollTick);
     else this.scrollRaf = 0;
   };
+
+  /** Puts the player where the pin wants it, with as few style writes as the technique needs. */
+  private applyPin(st: PinState, rect: DOMRect): void {
+    const el = this.playerEl!;
+    const h = this.horizontal();
+    const s = el.style;
+    if (this.pinType === "transform") {
+      // Rides inside its (moving) container: one compositor-only write per frame.
+      const shift = Math.round(st.shift * 100) / 100;
+      s.transform = shift ? (h ? `translate3d(${shift}px,0,0)` : `translate3d(0,${shift}px,0)`) : "";
+    } else if (this.pinType === "fixed") {
+      if (st.phase === "pinned") {
+        // Fixed loses the container's geometry, so it is handed over explicitly (and refreshed while pinned).
+        s.position = "fixed";
+        s.bottom = s.right = "";
+        if (h) {
+          s.left = `${st.anchor}px`;
+          s.top = `${rect.top}px`;
+          s.width = `${this.playerLength}px`;
+          s.height = `${rect.height}px`;
+        } else {
+          s.top = `${st.anchor}px`;
+          s.left = `${rect.left}px`;
+          s.width = `${rect.width}px`;
+        }
+      } else if (st.phase !== this.pinPhase) {
+        s.top = s.left = s.height = "";
+        if (!h) s.width = "";
+        s.position = st.phase === "after" ? "absolute" : "";
+        s.bottom = st.phase === "after" && !h ? "0" : "";
+        s.right = st.phase === "after" && h ? "0" : "";
+      }
+    }
+    if (st.phase !== this.pinPhase) {
+      this.pinPhase = st.phase;
+      el.dataset.sfPinPhase = st.phase;
+    }
+  }
+
+  /** ScrollTrigger-style markers for testing a page: start / end of the scrub range and the pin line. */
+  private renderMarkers(viewport: number): void {
+    for (const m of this.markerEls) m.remove();
+    this.markerEls = [];
+    const p = this.project;
+    const scrollEl = this.scrollEl;
+    if (!p?.playback.markers || !scrollEl) return;
+    const pb = p.playback;
+    const h = this.horizontal();
+    const mk = (text: string, color: string, fixed: boolean, pos: number): HTMLElement => {
+      const el = document.createElement("div");
+      el.className = "sf-marker";
+      el.textContent = text;
+      el.style.cssText = `position:${fixed ? "fixed" : "absolute"};z-index:2147483000;pointer-events:none;font:11px/1.2 ui-monospace,Menlo,monospace;color:${color};border-${h ? "left" : "top"}:1px dashed ${color};padding:2px 4px;white-space:nowrap;` + (h ? `top:${fixed ? 8 : 0}px;left:${pos}px;height:${fixed ? viewport : "100%"}` : `left:${fixed ? 8 : 0}px;top:${pos}px;width:${fixed ? "100%" : "auto"};right:${fixed ? "auto" : "0"}`);
+      (fixed ? document.body : scrollEl).appendChild(el);
+      this.markerEls.push(el);
+      return el;
+    };
+    if (pb.pin) {
+      mk("scrub start", "#16a34a", false, 0);
+      mk("scrub end", "#dc2626", false, this.travel);
+      mk(`pin · ${pb.pinPosition}${pb.pinOffset ? ` ${pb.pinOffset > 0 ? "+" : ""}${pb.pinOffset}px` : ""} · ${this.pinType}`, "#2563eb", true, pinAnchor({ viewport, playerLength: this.playerLength, pinPosition: pb.pinPosition, pinOffset: pb.pinOffset }));
+    } else {
+      const len = this.playerLength;
+      mk(`start · ${pb.triggerStart}`, "#16a34a", true, triggerPoint(pb.triggerStart, len, viewport) + (pb.triggerStart.split(" ")[0] === "center" ? len / 2 : pb.triggerStart.split(" ")[0] === "bottom" ? len : 0));
+      mk(`end · ${pb.triggerEnd}`, "#dc2626", true, triggerPoint(pb.triggerEnd, len, viewport) + (pb.triggerEnd.split(" ")[0] === "center" ? len / 2 : pb.triggerEnd.split(" ")[0] === "bottom" ? len : 0));
+    }
+  }
 
   /** Seeks media to `t` without playing, then renders layers. Works forwards and backwards. */
   private applyScrubTime(t: number): void {
@@ -999,4 +1131,15 @@ export class Player {
       this.toast(message, "error");
     }
   }
+}
+
+/** Computed styles of every ancestor below <body> — what decides whether sticky or fixed can work on this page. */
+function ancestorStyles(el: HTMLElement): AncestorStyle[] {
+  const out: AncestorStyle[] = [];
+  if (typeof getComputedStyle !== "function") return out;
+  for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    const cs = getComputedStyle(n);
+    out.push({ overflow: cs.overflow, overflowX: cs.overflowX, overflowY: cs.overflowY, transform: cs.transform || "none", perspective: cs.perspective || "none", filter: cs.filter || "none", willChange: cs.willChange || "auto", contain: cs.contain || "none" });
+  }
+  return out;
 }

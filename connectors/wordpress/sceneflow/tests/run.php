@@ -75,6 +75,11 @@ sf_assert( 'unsafe_url' === SceneFlow_Config::validate( sf_config( 'JavaScript:a
 sf_assert( 'missing_scenes' === SceneFlow_Config::validate( '{"schemaVersion":"1.0","projectId":"p1"}', 'p1' )['error'], 'missing scenes rejected' );
 
 // --- helpers ---
+// Serving a config must not turn empty objects into arrays (PHP assoc-array round trip); the player rejects `"style":[]`.
+$roundtrip = '{"schemaVersion":"1.0","projectId":"p1","scenes":[{"id":"s","layers":[{"id":"l","type":"hotspot","style":{},"content":{},"responsive":{"tablet":{}}}]}],"fonts":{"google":[]}}';
+sf_assert( json_encode( SceneFlow_Config::decode_for_output( $roundtrip ) ) === $roundtrip, 'served config keeps {} as {} and [] as []' );
+sf_assert( null === SceneFlow_Config::decode_for_output( '{nope' ), 'unreadable stored config decodes to null' );
+
 sf_assert( SceneFlow_Config::is_valid_id( 'abc-123_X' ) && ! SceneFlow_Config::is_valid_id( 'a b' ) && ! SceneFlow_Config::is_valid_id( str_repeat( 'a', 65 ) ), 'id validation' );
 sf_assert( SceneFlow_Config::is_valid_selector( '#hero > .wp-block-cover' ) && ! SceneFlow_Config::is_valid_selector( '<img onerror=x>' ) && ! SceneFlow_Config::is_valid_selector( '' ), 'selector validation' );
 sf_assert( SceneFlow_Config::is_valid_css_length( '720px' ) && SceneFlow_Config::is_valid_css_length( '100%' ) && SceneFlow_Config::is_valid_css_length( '37.5rem' ), 'css length accepted' );

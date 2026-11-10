@@ -6,6 +6,7 @@ import { CANVAS_RATIOS, resolveLayer, type Action, type Layer, type PresetConfig
 import { useEditor, useScene, useSelectedLayers } from "@/lib/editorStore";
 import type { MediaAsset } from "@/lib/types";
 import { ColorField, Field, NumberField, SelectField, TextField, Toggle } from "./fields";
+import { FramePicker } from "./FramePicker";
 import { LayersPanel } from "./LayersPanel";
 import { MediaPicker, type PickerType } from "./MediaPicker";
 import { MotionEditor } from "./MotionEditor";
@@ -66,14 +67,34 @@ function PresetUpdateNotice({ layer }: { layer: Layer }) {
 
 // ---------------- scene ----------------
 
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+const TRIGGER_START_OPTIONS = [
+  { value: "top bottom", label: "Player enters the screen (top hits bottom)" },
+  { value: "top center", label: "Player's top reaches the middle" },
+  { value: "top top", label: "Player's top reaches the top" },
+  { value: "center center", label: "Player is centred" },
+];
+const TRIGGER_END_OPTIONS = [
+  { value: "bottom top", label: "Player leaves the screen (bottom hits top)" },
+  { value: "bottom center", label: "Player's bottom reaches the middle" },
+  { value: "bottom bottom", label: "Player's bottom reaches the bottom" },
+  { value: "center center", label: "Player is centred" },
+];
+
 function SceneInspector({ workspaceId }: { workspaceId: string }) {
   const { project, updateScene, setSceneDuration, setProjectMeta, mode, setSceneScript, openAi } = useEditor();
   const scene = useScene();
   const [picker, setPicker] = useState<PickerType | null>(null);
+  const [posterPicker, setPosterPicker] = useState<"frame" | "image" | null>(null);
   const bg = scene.background;
   const baseVideo = project.video;
   const pb = project.playback;
   const setPlayback = (patch: Partial<typeof pb>) => setProjectMeta({ playback: { ...pb, ...patch } });
+  // The video a thumbnail frame can be taken from: the main video, or the first scene's clip.
+  const firstBg = project.scenes[0]?.background;
+  const frameAssetId = baseVideo?.assetId ?? (firstBg?.type === "video" ? firstBg.assetId : undefined);
+  const autoPoster = baseVideo?.poster ?? (firstBg?.type === "video" ? firstBg.poster : firstBg?.type === "image" ? firstBg.src : undefined);
+  const hasMedia = Boolean(baseVideo) || project.scenes.some((s) => s.background.type === "video" || s.background.type === "image");
 
   const pick = (asset: MediaAsset) => {
     const m = asset.metadataJson;
@@ -144,16 +165,17 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
         <NumberField label="Length" suffix="s" value={scene.transition.duration} step={0.1} min={0} max={5} onChange={(duration) => updateScene(scene.id, { transition: { ...scene.transition, duration } })} />
       </div>
 
-      <div className="stack" style={{ gap: 6 }}>
-        <div className="row between">
-          <h3 className="small muted" style={{ margin: 0 }}>
-            VOICEOVER
-          </h3>
-          <button className="btn sm" onClick={() => openAi("voiceover")} title="Read this line with a voice and put the audio on the scene">
-            🎙 Generate voice
+      {/* Optional and kept out of the way: most videos use the customer's own footage and sound. */}
+      <details className="stack" style={{ gap: 6 }}>
+        <summary className="small muted" style={{ cursor: "pointer" }}>
+          Spoken line &amp; voice (optional)
+        </summary>
+        <TextField label="Spoken line for this scene (captions are timed from it)" multiline value={scene.script?.voiceover ?? ""} onChange={(voiceover) => setSceneScript(scene.id, { voiceover })} placeholder={suggestedVoiceover(scene) || "Write a line, or let ✨ AI draft the script"} />
+        <div>
+          <button className="btn sm" onClick={() => openAi("voiceover")} title="Read this line with a voice and put the audio on the scene (optional)">
+            🎙 Generate voice (optional)
           </button>
         </div>
-        <TextField label="What the voice says in this scene" multiline value={scene.script?.voiceover ?? ""} onChange={(voiceover) => setSceneScript(scene.id, { voiceover })} placeholder={suggestedVoiceover(scene) || "Write a line, or let ✨ AI draft the script"} />
         {scene.script?.shot && (
           <div className="row between small muted">
             <span style={{ flex: 1 }}>🎬 {scene.script.shot}</span>
@@ -162,14 +184,60 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
             </button>
           </div>
         )}
-      </div>
+      </details>
+
+      {/* How the video looks on the page: thumbnail, controls, speed, background. Visible in both modes — these are the questions every site owner asks. */}
+      {hasMedia && (
+        <div className="stack" style={{ gap: 10 }} data-testid="video-look">
+          <h3 className="small muted" style={{ margin: "6px 0 0" }}>
+            VIDEO
+          </h3>
+          <Field label="Thumbnail (shown before play)" hint={project.poster ? "Your own picture" : "Automatic: a frame near the start"}>
+            <div className="row" style={{ alignItems: "center" }}>
+              {project.poster ?? autoPoster ? <img src={project.poster ?? autoPoster} alt="" style={{ width: 96, height: 54, objectFit: "cover", borderRadius: 6, background: "#000" }} data-testid="poster-preview" /> : <div style={{ width: 96, height: 54, borderRadius: 6, background: "var(--surface-2)" }} />}
+              <div className="stack" style={{ gap: 4 }}>
+                {frameAssetId && (
+                  <button className="btn sm" onClick={() => setPosterPicker("frame")} data-testid="poster-pick-frame" title="Choose any moment of the video as the thumbnail">
+                    Pick a frame…
+                  </button>
+                )}
+                <button className="btn sm" onClick={() => setPosterPicker("image")} data-testid="poster-upload" title="Use a designed image (uploaded or from your library)">
+                  Use an image…
+                </button>
+                {project.poster && (
+                  <button className="btn sm" onClick={() => setProjectMeta({ poster: undefined })} data-testid="poster-reset">
+                    Back to automatic
+                  </button>
+                )}
+              </div>
+            </div>
+          </Field>
+          {pb.mode !== "scroll" && (
+            <>
+              <Toggle label="Show play controls on the video" checked={pb.controls} onChange={(controls) => setPlayback({ controls })} />
+              <SelectField label="Playback speed" value={String(pb.speed)} options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×${s === 1 ? " (normal)" : ""}` }))} onChange={(v) => setPlayback({ speed: Number(v) })} />
+            </>
+          )}
+          <SelectField
+            label="Behind the video"
+            value={project.canvas.background === "transparent" ? "transparent" : project.canvas.background === "#000" ? "#000" : "custom"}
+            options={[
+              { value: "transparent", label: "Blend into the page (no box)" },
+              { value: "#000", label: "Black" },
+              { value: "custom", label: "Colour…" },
+            ]}
+            onChange={(v) => setProjectMeta({ canvas: { ...project.canvas, background: v === "custom" ? "#ffffff" : v } })}
+          />
+          {project.canvas.background !== "transparent" && project.canvas.background !== "#000" && <ColorField label="Colour behind the video" value={project.canvas.background} onChange={(background) => setProjectMeta({ canvas: { ...project.canvas, background } })} />}
+        </div>
+      )}
 
       {mode === "advanced" && (
         <>
           <h3 className="small muted" style={{ margin: "6px 0 0" }}>
             PROJECT
           </h3>
-          <SelectField label="Canvas" value={project.canvas.aspectRatio} options={CANVAS_RATIOS.map((r) => ({ value: r, label: r }))} onChange={(aspectRatio) => setProjectMeta({ canvas: { aspectRatio } })} />
+          <SelectField label="Canvas" value={project.canvas.aspectRatio} options={CANVAS_RATIOS.map((r) => ({ value: r, label: r }))} onChange={(aspectRatio) => setProjectMeta({ canvas: { ...project.canvas, aspectRatio } })} />
           <SelectField
             label="Playback"
             value={pb.mode}
@@ -183,19 +251,36 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
             ]}
             onChange={(mode) => setPlayback({ mode })}
           />
-          {pb.mode !== "scroll" && (
-            <>
-              <Toggle label="Show native video controls" checked={pb.controls} onChange={(controls) => setPlayback({ controls })} />
-              <Toggle label="Start muted" checked={pb.muted} onChange={(muted) => setPlayback({ muted })} />
-            </>
-          )}
+          {pb.mode !== "scroll" && <Toggle label="Start muted" checked={pb.muted} onChange={(muted) => setPlayback({ muted })} />}
           {pb.mode === "scroll" && (
             <>
-              <p className="muted small">Visitors scrub the video by scrolling the page — forwards and backwards. Audio is off in this mode.</p>
+              <p className="muted small">Visitors scrub the video by scrolling the page — forwards and backwards, as smooth as the page itself. Audio is off in this mode. Playback speed does not apply: the scroll length sets the pace.</p>
               <Toggle label="Pin the player while scrolling" checked={pb.pin} onChange={(pin) => setPlayback({ pin })} />
-              <ScrollDistanceField value={pb.scrollDistance} onChange={(scrollDistance) => setPlayback({ scrollDistance })} />
+              {pb.pin ? (
+                <>
+                  <ScrollDistanceField value={pb.scrollDistance} onChange={(scrollDistance) => setPlayback({ scrollDistance })} />
+                  <div className="ed-grid2">
+                    <SelectField
+                      label="Pinned at"
+                      value={pb.pinPosition}
+                      options={[
+                        { value: "top", label: "Top of the screen" },
+                        { value: "center", label: "Centre of the screen" },
+                        { value: "bottom", label: "Bottom of the screen" },
+                      ]}
+                      onChange={(pinPosition) => setPlayback({ pinPosition })}
+                    />
+                    <NumberField label="Offset (e.g. fixed header)" suffix="px" value={pb.pinOffset} step={4} min={-600} max={600} onChange={(pinOffset) => setPlayback({ pinOffset: Math.round(pinOffset) })} />
+                  </div>
+                </>
+              ) : (
+                <div className="ed-grid2">
+                  <SelectField label="Start when" value={pb.triggerStart} options={TRIGGER_START_OPTIONS} onChange={(triggerStart) => setPlayback({ triggerStart })} />
+                  <SelectField label="End when" value={pb.triggerEnd} options={TRIGGER_END_OPTIONS} onChange={(triggerEnd) => setPlayback({ triggerEnd })} />
+                </div>
+              )}
               <div className="ed-grid2">
-                <NumberField label="Smoothness" value={pb.smoothness} step={0.1} min={0} max={1} onChange={(smoothness) => setPlayback({ smoothness })} />
+                <NumberField label="Smoothness (0 = exact, 1 = glide)" value={pb.smoothness} step={0.1} min={0} max={1} onChange={(smoothness) => setPlayback({ smoothness })} />
                 <SelectField
                   label="Direction"
                   value={pb.scrollAxis}
@@ -209,6 +294,7 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
                 <NumberField label="End dead zone" value={pb.endOffset} step={0.05} min={0} max={0.45} onChange={(endOffset) => setPlayback({ endOffset })} />
               </div>
               <Toggle label="Show progress bar" checked={pb.showProgress} onChange={(showProgress) => setPlayback({ showProgress })} />
+              <Toggle label="Show scroll markers while testing (start / end / pin lines on the page)" checked={pb.markers} onChange={(markers) => setPlayback({ markers })} />
               <SelectField
                 label="On phones"
                 value={pb.mobileFallback}
@@ -235,6 +321,28 @@ function SceneInspector({ workspaceId }: { workspaceId: string }) {
       )}
 
       {picker && <MediaPicker workspaceId={workspaceId} type={picker} onPick={pick} onClose={() => setPicker(null)} />}
+      {posterPicker === "frame" && frameAssetId && (
+        <FramePicker
+          assetId={frameAssetId}
+          onPick={(url) => {
+            setProjectMeta({ poster: url });
+            setPosterPicker(null);
+          }}
+          onClose={() => setPosterPicker(null)}
+        />
+      )}
+      {posterPicker === "image" && (
+        <MediaPicker
+          workspaceId={workspaceId}
+          type="image"
+          onPick={(asset) => {
+            const url = asset.metadataJson.editorUrl ?? asset.metadataJson.posterUrl;
+            if (url) setProjectMeta({ poster: url });
+            setPosterPicker(null);
+          }}
+          onClose={() => setPosterPicker(null)}
+        />
+      )}
     </div>
   );
 }
@@ -243,7 +351,7 @@ function ScrollDistanceField({ value, onChange }: { value: string; onChange: (v:
   const [draft, setDraft] = useState(value);
   const valid = /^\d{1,4}(vh|px)$/.test(draft);
   return (
-    <Field label="Scroll distance" hint="e.g. 300vh = 3 screens">
+    <Field label="Scroll length while pinned" hint="How far the page scrolls while the video plays through — 300vh = 3 screens">
       <input className={`input sm ${valid ? "" : "invalid"}`} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => valid && draft !== value && onChange(draft)} placeholder="300vh" />
     </Field>
   );

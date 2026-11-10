@@ -54,6 +54,18 @@ class SceneFlow_Config {
 	}
 
 	/**
+	 * Decodes a stored config for serving. Objects stay objects: with assoc arrays an empty `{}` (a layer
+	 * without styling, an empty override) would be re-encoded as `[]`, which the player's schema rejects.
+	 *
+	 * @param string $json Raw JSON as published.
+	 * @return mixed stdClass tree, or null when the JSON is unreadable.
+	 */
+	public static function decode_for_output( $json ) {
+		$data = json_decode( (string) $json, false, 64 );
+		return JSON_ERROR_NONE === json_last_error() ? $data : null;
+	}
+
+	/**
 	 * Finds the first string that looks like an executable / data URL.
 	 *
 	 * @param mixed $value Any decoded JSON value.

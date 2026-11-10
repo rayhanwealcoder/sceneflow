@@ -7,7 +7,7 @@ import { extname, join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { chromium, type Browser, type Route } from "playwright-core";
 import type { Device, Project } from "@sceneflow/schema";
-import { audioFilterGraph, audioPlan, exportConfig, exportFileName, LocalStorageProvider, MAX_EXPORT_SECONDS, mediaAssets, projectActivity, projectDuration, videoExports, type AudioCue, type Db, type StorageProvider } from "@sceneflow/server";
+import { audioFilterGraph, audioPlan, exportConfig, exportFileName, exportSpeed, LocalStorageProvider, MAX_EXPORT_SECONDS, mediaAssets, projectActivity, projectDuration, videoExports, type AudioCue, type Db, type StorageProvider } from "@sceneflow/server";
 import { FFMPEG, ffmpeg, ffprobe } from "./ffmpeg.js";
 
 /*
@@ -62,7 +62,7 @@ function renderPageHtml(config: Project, device: Device, width: number, height: 
   const json = JSON.stringify(config).replace(/</g, "\\u003c");
   return `<!doctype html><html><head><meta charset="utf-8"><title>SceneFlow export</title>
 <style>
-html,body{margin:0;padding:0;background:#000;overflow:hidden}
+html,body{margin:0;padding:0;background:${config.canvas.background === "transparent" ? "#fff" : config.canvas.background};overflow:hidden}
 #root{width:${width}px;height:${height}px;position:relative;overflow:hidden}
 .sf-play,.sf-cc,.sf-toast{display:none!important}
 .sf-layer,.sf-captions,.sf-media>*{transition:none!important}
@@ -249,10 +249,13 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
   try {
     const opts = row.optionsJson;
     const config = exportConfig(row.configJson);
+    // `duration` is timeline (video) seconds; the file is `duration / speed` seconds long and frame k shows timeline time k/fps·speed.
     const duration = Math.min(projectDuration(config), MAX_EXPORT_SECONDS);
     if (!(duration > 0) || !config.scenes.length) throw new Error("This project has no scenes yet — open the editor and add a video or a template first.");
+    const speed = exportSpeed(config);
+    const wallDuration = duration / speed;
     const fps = opts.fps;
-    const frames = Math.max(1, Math.round(duration * fps));
+    const frames = Math.max(1, Math.round(wallDuration * fps));
 
     // ---- the page ----
     browser = await launchBrowser(deps.browserPath);
@@ -292,7 +295,7 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
     let lastReport = 0;
     for (let i = 0; i < frames; i++) {
       if (enc.exitCode !== null) throw new Error(`Video encoding stopped: ${encErr.trim().slice(-600) || "ffmpeg exited early"}`);
-      const t = Math.min(duration, i / fps);
+      const t = Math.min(duration, (i / fps) * speed);
       if (await page.evaluate(`window.__sfExport.frame(${t})`)) slowFrames++;
       const shot = await cdp.send("Page.captureScreenshot", { format: FRAME_FORMAT.format, quality: FRAME_FORMAT.quality, clip: { x: 0, y: 0, width: opts.width, height: opts.height, scale: 1 }, captureBeyondViewport: false, fromSurface: true });
       if (!enc.stdin.write(Buffer.from(shot.data, "base64"))) await once(enc.stdin, "drain");
@@ -321,9 +324,9 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
     }
     let finalFile = videoFile;
     if (inputs.length) {
-      const graph = audioFilterGraph(inputs.map((x) => x.cue), duration);
+      const graph = audioFilterGraph(inputs.map((x) => x.cue), wallDuration, speed);
       finalFile = join(workDir, "final.mp4");
-      await ffmpeg(["-i", videoFile, ...inputs.flatMap((x) => ["-i", x.file]), "-filter_complex", graph.filter, "-map", "0:v", "-map", graph.out, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-t", duration.toFixed(3), "-movflags", "+faststart", finalFile]);
+      await ffmpeg(["-i", videoFile, ...inputs.flatMap((x) => ["-i", x.file]), "-filter_complex", graph.filter, "-map", "0:v", "-map", graph.out, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-t", wallDuration.toFixed(3), "-movflags", "+faststart", finalFile]);
     }
 
     // ---- store ----

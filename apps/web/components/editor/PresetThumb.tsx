@@ -17,7 +17,7 @@ export function PresetThumb({ layers, background }: { layers: Layer[]; backgroun
     ensureStyles();
     const stage = new Stage(host.current, { device: "desktop", editing: true });
     const scene: Scene = { id: "thumb", name: "", start: 0, end: 5, background: bg, layers, transition: { type: "none", duration: 0 } };
-    const project: Project = { schemaVersion: "1.0", projectId: "thumb", version: 1, canvas: { aspectRatio: "16:9" }, playback: playbackSchema.parse({}), scenes: [scene] };
+    const project: Project = { schemaVersion: "1.0", projectId: "thumb", version: 1, canvas: { aspectRatio: "16:9", background: "#000" }, playback: playbackSchema.parse({}), scenes: [scene] };
     stage.render(project, "thumb", null);
     return () => stage.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps

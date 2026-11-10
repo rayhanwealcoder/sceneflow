@@ -75,7 +75,7 @@ interface EditorActions {
   moveScene(id: string, dir: -1 | 1): void;
   updateScene(id: string, patch: Partial<Pick<Scene, "name" | "background" | "transition">>): void;
   setSceneDuration(id: string, d: number): void;
-  setProjectMeta(patch: Partial<Pick<Project, "canvas" | "playback" | "video">>): void;
+  setProjectMeta(patch: Partial<Pick<Project, "canvas" | "playback" | "video" | "poster">>): void;
 
   addLayer(type: ed.ElementType, init?: Partial<Layer>): void;
   removeSelected(): void;
@@ -233,7 +233,13 @@ export const useEditor = create<EditorStore>()((set, get) => ({
   moveScene: (id, dir) => get().apply((p) => ed.moveScene(p, id, dir)),
   updateScene: (id, patch) => get().apply((p) => ed.updateScene(p, id, patch)),
   setSceneDuration: (id, d) => get().apply((p) => ed.setSceneDuration(p, id, d)),
-  setProjectMeta: (patch) => get().apply((p) => ({ ...p, ...patch })),
+  // `poster: undefined` removes the custom thumbnail (JSON drops undefined keys; a spread would keep the old one).
+  setProjectMeta: (patch) =>
+    get().apply((p) => {
+      const next = { ...p, ...patch };
+      if ("poster" in patch && patch.poster === undefined) delete next.poster;
+      return next;
+    }),
 
   addLayer: (type, init) => {
     const { project, sceneId, apply, brandKit } = get();

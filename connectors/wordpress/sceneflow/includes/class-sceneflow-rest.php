@@ -298,7 +298,8 @@ class SceneFlow_REST {
 	 * @return WP_REST_Response
 	 */
 	private function config_response( $config_json, $cache, $etag ) {
-		$response = new WP_REST_Response( json_decode( $config_json, true ) );
+		// Decoded as objects, never assoc arrays: `{}` must come out as `{}` (see SceneFlow_Config::decode_for_output).
+		$response = new WP_REST_Response( SceneFlow_Config::decode_for_output( $config_json ) );
 		$response->header( 'Cache-Control', $cache );
 		$response->header( 'Access-Control-Allow-Origin', '*' );
 		if ( '' !== $etag ) {
@@ -348,7 +349,7 @@ class SceneFlow_REST {
 			'ok'        => true,
 			'projectId' => $project_id,
 			'version'   => $version,
-			'configUrl' => rest_url( self::NS . '/project/' . rawurlencode( $project_id ) ),
+			'configUrl' => add_query_arg( 'v', $version, rest_url( self::NS . '/project/' . rawurlencode( $project_id ) ) ),
 			'shortcode' => '[sceneflow id="' . $project_id . '"]',
 		);
 	}
