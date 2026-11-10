@@ -28,7 +28,7 @@ export interface TrackData {
   payload?: Record<string, string | number | boolean>;
 }
 
-const SID_KEY = "sf_sid";
+const SID_KEY = "sceneflow_sid";
 
 function randomId(): string {
   const c = typeof crypto !== "undefined" ? crypto : undefined;

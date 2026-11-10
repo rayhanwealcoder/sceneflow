@@ -171,26 +171,26 @@ export class Player {
     root.dataset.sceneflow = "ready";
 
     const playerEl = document.createElement("div");
-    playerEl.className = "sf-player";
+    playerEl.className = "sceneflow-root";
     playerEl.style.aspectRatio = String(aspectRatioValue(project.canvas.aspectRatio));
     // "transparent" (or the page colour) lets the video sit in the page like a picture — no black box, no visible player.
     if (project.canvas.background !== "#000") playerEl.style.background = project.canvas.background;
-    playerEl.dataset.sfState = "ready";
-    playerEl.dataset.sfMode = this.effective;
+    playerEl.dataset.sceneflowState = "ready";
+    playerEl.dataset.sceneflowMode = this.effective;
     const mediaEl = document.createElement("div");
-    mediaEl.className = "sf-media";
+    mediaEl.className = "sceneflow-media";
     playerEl.appendChild(mediaEl);
 
     if (this.effective === "scroll") {
       const scrollEl = document.createElement("div");
-      scrollEl.className = "sf-scroll";
-      if (project.playback.pin) playerEl.classList.add("sf-pinned");
+      scrollEl.className = "sceneflow-scroll";
+      if (project.playback.pin) playerEl.classList.add("sceneflow-pinned");
       scrollEl.appendChild(playerEl);
       root.appendChild(scrollEl);
       this.scrollEl = scrollEl;
       if (project.playback.showProgress) {
         const bar = document.createElement("div");
-        bar.className = "sf-progress";
+        bar.className = "sceneflow-progress";
         const fill = document.createElement("i");
         bar.appendChild(fill);
         playerEl.appendChild(bar);
@@ -220,7 +220,7 @@ export class Player {
     if (m !== "autoplay" && m !== "scroll" && m !== "poster" && (this.mode === "scenes" || !project.playback.controls)) {
       const play = document.createElement("button");
       play.type = "button";
-      play.className = "sf-play";
+      play.className = "sceneflow-play";
       play.setAttribute("aria-label", "Play");
       play.textContent = "▶";
       play.addEventListener("click", () => (this.state === "playing" ? this.pause() : this.play()));
@@ -234,7 +234,7 @@ export class Player {
 
   // ---------- captions ----------
 
-  private static readonly CC_KEY = "sf_cc";
+  private static readonly CC_KEY = "sceneflow_cc";
 
   /** Subtitle bar + CC toggle, only when the project has cues and does not turn them off. */
   private mountCaptions(project: Project, playerEl: HTMLElement): void {
@@ -248,17 +248,17 @@ export class Player {
     }
     this.captionsOn = pref !== "off";
     const el = document.createElement("div");
-    el.className = "sf-captions";
+    el.className = "sceneflow-captions";
     el.setAttribute("aria-live", "polite");
-    el.dataset.sfPos = caps.style.position;
-    el.dataset.sfSize = caps.style.size;
-    if (this.mode === "base" && project.playback.controls && this.effective !== "scroll") el.dataset.sfControls = "1";
+    el.dataset.sceneflowPos = caps.style.position;
+    el.dataset.sceneflowSize = caps.style.size;
+    if (this.mode === "base" && project.playback.controls && this.effective !== "scroll") el.dataset.sceneflowControls = "1";
     el.lang = caps.language;
     playerEl.appendChild(el);
     this.captionsEl = el;
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "sf-cc";
+    btn.className = "sceneflow-cc";
     btn.textContent = "CC";
     btn.setAttribute("aria-label", "Toggle captions");
     btn.addEventListener("click", (e) => {
@@ -266,10 +266,10 @@ export class Player {
       this.setCaptionsEnabled(!this.captionsOn);
     });
     playerEl.appendChild(btn);
-    playerEl.dataset.sfCc = this.captionsOn ? "on" : "off";
+    playerEl.dataset.sceneflowCc = this.captionsOn ? "on" : "off";
     btn.setAttribute("aria-pressed", String(this.captionsOn));
     // Captions scale with the player like layers do (same reference width as the stage).
-    const scale = (w: number) => el.style.setProperty("--sf-scale", String(Math.max(0.35, w / REF_WIDTH)));
+    const scale = (w: number) => el.style.setProperty("--sceneflow-scale", String(Math.max(0.35, w / REF_WIDTH)));
     scale(playerEl.clientWidth || REF_WIDTH);
     if (typeof ResizeObserver !== "undefined") {
       this.captionsRo = new ResizeObserver((entries) => {
@@ -294,8 +294,8 @@ export class Player {
   setCaptionsEnabled(on: boolean): void {
     this.captionsOn = on;
     if (this.playerEl) {
-      this.playerEl.dataset.sfCc = on ? "on" : "off";
-      this.playerEl.querySelector(".sf-cc")?.setAttribute("aria-pressed", String(on));
+      this.playerEl.dataset.sceneflowCc = on ? "on" : "off";
+      this.playerEl.querySelector(".sceneflow-cc")?.setAttribute("aria-pressed", String(on));
     }
     try {
       localStorage.setItem(Player.CC_KEY, on ? "on" : "off");
@@ -631,7 +631,7 @@ export class Player {
   private setState(s: PlayerState): void {
     if (this.state === s) return;
     this.state = s;
-    if (this.playerEl) this.playerEl.dataset.sfState = s;
+    if (this.playerEl) this.playerEl.dataset.sceneflowState = s;
     if (s === "playing") {
       this.emitter.emit("play", undefined);
       this.analytics?.track("video_play", { t: this.time, sceneId: this.currentScene?.id });
@@ -799,7 +799,7 @@ export class Player {
 
   // ---------- scroll scrub ----------
   //
-  // A ScrollTrigger-like engine without the library: the container (`.sf-scroll`) is as long as the player plus the
+  // A ScrollTrigger-like engine without the library: the container (`.sceneflow-scroll`) is as long as the player plus the
   // scrub travel; the player is pinned at its anchor while the page scrolls through the travel. The technique is
   // chosen per page — CSS sticky where the theme allows it, `position: fixed` through overflow-clipping wrappers,
   // and a per-frame transform inside smooth-scroll wrappers (GSAP ScrollSmoother / Lenis, where the page itself is
@@ -846,12 +846,12 @@ export class Player {
     this.pinPhase = null;
     if (pb.pin) {
       this.pinType = pinTypeFor(ancestorStyles(scrollEl));
-      playerEl.dataset.sfPin = this.pinType;
+      playerEl.dataset.sceneflowPin = this.pinType;
       scrollEl.style[h ? "width" : "height"] = `${Math.round(this.playerLength + this.travel)}px`;
       scrollEl.style[h ? "height" : "width"] = "";
       if (this.pinType === "sticky") playerEl.style[h ? "left" : "top"] = `${Math.round(pinAnchor({ viewport, playerLength: this.playerLength, pinPosition: pb.pinPosition, pinOffset: pb.pinOffset }))}px`;
     } else {
-      delete playerEl.dataset.sfPin;
+      delete playerEl.dataset.sceneflowPin;
       scrollEl.style.height = scrollEl.style.width = "";
     }
     this.renderMarkers(viewport);
@@ -941,7 +941,7 @@ export class Player {
     }
     if (st.phase !== this.pinPhase) {
       this.pinPhase = st.phase;
-      el.dataset.sfPinPhase = st.phase;
+      el.dataset.sceneflowPinPhase = st.phase;
     }
   }
 
@@ -956,7 +956,7 @@ export class Player {
     const h = this.horizontal();
     const mk = (text: string, color: string, fixed: boolean, pos: number): HTMLElement => {
       const el = document.createElement("div");
-      el.className = "sf-marker";
+      el.className = "sceneflow-marker";
       el.textContent = text;
       el.style.cssText = `position:${fixed ? "fixed" : "absolute"};z-index:2147483000;pointer-events:none;font:11px/1.2 ui-monospace,Menlo,monospace;color:${color};border-${h ? "left" : "top"}:1px dashed ${color};padding:2px 4px;white-space:nowrap;` + (h ? `top:${fixed ? 8 : 0}px;left:${pos}px;height:${fixed ? viewport : "100%"}` : `left:${fixed ? 8 : 0}px;top:${pos}px;width:${fixed ? "100%" : "auto"};right:${fixed ? "auto" : "0"}`);
       (fixed ? document.body : scrollEl).appendChild(el);
@@ -1025,7 +1025,7 @@ export class Player {
     clearTimeout(this.toastTimer);
     this.toastEl?.remove();
     const el = document.createElement("div");
-    el.className = "sf-toast";
+    el.className = "sceneflow-toast";
     el.dataset.kind = kind;
     el.setAttribute("role", "status");
     const text = document.createElement("span");

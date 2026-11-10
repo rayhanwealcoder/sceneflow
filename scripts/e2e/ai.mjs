@@ -100,9 +100,9 @@ step(`published config: ${voLayers.length} voiceover tracks reachable, ${live.ca
 
 console.log("  project", projectId);
 await page.goto(`${API}/demo/${projectId}`);
-await page.waitForSelector("[data-sceneflow=ready] .sf-play", { timeout: 20000 });
-if (!(await page.$(".sf-captions"))) fail("runtime did not mount the caption bar");
-if (!(await page.$(".sf-cc"))) fail("runtime did not mount the CC button");
+await page.waitForSelector("[data-sceneflow=ready] .sceneflow-play", { timeout: 20000 });
+if (!(await page.$(".sceneflow-captions"))) fail("runtime did not mount the caption bar");
+if (!(await page.$(".sceneflow-cc"))) fail("runtime did not mount the CC button");
 /** Clicks with a diagnosis of what covers the element when the click cannot land. */
 async function clickOrExplain(selector) {
   try {
@@ -118,16 +118,16 @@ async function clickOrExplain(selector) {
     fail(`click ${selector} failed: ${String(e.message).split("\n")[0]} — ${info}`);
   }
 }
-await clickOrExplain(".sf-play");
-await page.waitForFunction(() => (document.querySelector(".sf-captions")?.textContent ?? "").length > 0, null, { timeout: 8000 });
-const firstCue = await page.textContent(".sf-captions");
+await clickOrExplain(".sceneflow-play");
+await page.waitForFunction(() => (document.querySelector(".sceneflow-captions")?.textContent ?? "").length > 0, null, { timeout: 8000 });
+const firstCue = await page.textContent(".sceneflow-captions");
 const audioPlaying = await page.evaluate(() => new Promise((res) => setTimeout(() => res(performance.getEntriesByType("resource").some((e) => /audio\.m4a/.test(e.name))), 1500)));
 if (!audioPlaying) fail("the player did not fetch any voiceover audio");
-await clickOrExplain(".sf-cc");
-await page.waitForFunction(() => document.querySelector(".sf-player")?.dataset.sfCc === "off");
-const hidden = await page.evaluate(() => getComputedStyle(document.querySelector(".sf-captions")).display === "none");
+await clickOrExplain(".sceneflow-cc");
+await page.waitForFunction(() => document.querySelector(".sceneflow-root")?.dataset.sceneflowCc === "off");
+const hidden = await page.evaluate(() => getComputedStyle(document.querySelector(".sceneflow-captions")).display === "none");
 if (!hidden) fail("CC button did not hide the captions");
-await clickOrExplain(".sf-cc");
+await clickOrExplain(".sceneflow-cc");
 await pause(2500);
 check(`published player: captions show (“${firstCue}”), voiceover audio loads, CC toggles`);
 

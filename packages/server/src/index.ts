@@ -11,4 +11,5 @@ export * from "./storage/s3.js";
 export * from "./storage/index.js";
 export * from "./queue/index.js";
 export * from "./ai/index.js";
+export * from "./mail/index.js";
 export * from "./export/plan.js";

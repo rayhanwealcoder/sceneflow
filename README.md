@@ -24,6 +24,8 @@ Migrations run automatically when the API starts.
 
 Storage defaults to the local disk (`STORAGE_PROVIDER=local`). For Cloudflare R2 / AWS S3 / MinIO set `STORAGE_PROVIDER=s3` plus the `S3_*` variables in **both** `apps/api/.env` and `apps/worker/.env` (see `.env.example`). Nothing else changes.
 
+E-mail is optional: without `MAIL_*` settings, password-reset links, invitations and "your video is ready" are written to `<STORAGE_DIR>/outbox/*.json` (links also in the API log) and the pages say so. For real mail set `MAIL_FROM` plus `RESEND_API_KEY` (Resend, HTTP) or `SMTP_URL` (any SMTP server) in `apps/api/.env` and `apps/worker/.env`.
+
 ## Tests
 
 ```bash
@@ -33,7 +35,7 @@ pnpm typecheck
 
 Create the test database once: `psql -U postgres -c "create database sceneflow_test;"`.
 
-End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`; `node scripts/e2e/agency.mjs` runs the agency flow (client review link, approval, invite, comments, dashboard) across three browser contexts; `node scripts/e2e/export.mjs` renders a 720p MP4 through the UI, downloads it and checks the file; `node scripts/e2e/full-local.mjs` walks the whole product with one fresh account; `node scripts/e2e/wp-landing.mjs` builds a designed landing page on the LocalWP site with a Chrome-rendered product clip (`make-demo-clip.mjs`) and checks the element picker, the shortcode, scroll pinning on a smooth-scroll theme, WooCommerce add-to-cart and analytics.
+End-to-end scripts against a **running** stack (`pnpm dev` or the built servers): `pnpm smoke` (upload → publish), `node scripts/e2e/perf.mjs` (renditions, device sources, diagnostics), `node scripts/e2e/presets.mjs` (brand kit, presets, templates, connector zips), `node scripts/e2e/wp-commerce.mjs <pairing-code>` (WooCommerce on the LocalWP site). Four of them drive a real Chrome through `playwright-core` (uses the installed Chrome, nothing to download): `node scripts/e2e/pages.mjs` walks every page and fails on any page error; `node scripts/e2e/scroll-smoothness.mjs` measures scroll-scrub frame updates and seek latency on a generated clip; `node scripts/e2e/analytics.mjs` plays a published video and checks the Analytics summary; `node scripts/e2e/ai.mjs --record` runs the AI flow through the UI and saves a walkthrough video to `dist/walkthrough/`; `node scripts/e2e/agency.mjs` runs the agency flow (client review link, approval, invite, comments, dashboard) across three browser contexts; `node scripts/e2e/export.mjs` renders a 720p MP4 through the UI, downloads it and checks the file; `node scripts/e2e/admin.mjs` runs the super admin console (CLI grant, disable / enable, roles, plan, System, sign in as, reset link, CSV, Sites, audit log) in two browser contexts; `node scripts/e2e/account.mjs` runs forgot-password / reset / account-page / invitation-mail in two browser contexts (reads the outbox folder); `node scripts/e2e/full-local.mjs` walks the whole product with one fresh account; `node scripts/e2e/wp-landing.mjs` builds a designed landing page on the LocalWP site with a Chrome-rendered product clip (`make-demo-clip.mjs`) and checks the element picker, the shortcode, scroll pinning on a smooth-scroll theme, WooCommerce add-to-cart and analytics.
 
 ## Layout
 
@@ -99,3 +101,20 @@ See `docs/architecture.md` for decisions and `CHANGELOG.md` for progress by phas
 4. Set `NEXT_PUBLIC_API_URL=https://api.yourdomain` in `apps/web/.env` before `pnpm build` (it is baked into the web bundle).
 5. Run `pnpm --filter @sceneflow/api start`, `pnpm --filter @sceneflow/worker start` and `pnpm --filter @sceneflow/web start` under pm2; put nginx in front with `client_max_body_size 2g` for `/uploads/`.
 6. Smoke-test the deployment: `API_URL=https://api.yourdomain pnpm smoke`.
+7. Make yourself the super admin: sign up in the app, then `pnpm admin grant you@yourdomain` on the server; the **Admin** link opens the console (accounts, workspaces, plans, workers / queues, audit log).
+8. Mail: `MAIL_FROM` + `RESEND_API_KEY` (or `SMTP_URL`) in both `.env` files, otherwise reset links end up in `<STORAGE_DIR>/outbox`.
+
+## Hosting without a VPS (free tiers)
+
+SceneFlow is three processes plus Postgres and file storage. Everything except the worker fits on free tiers; the worker (FFmpeg + headless Chrome) needs a real machine.
+
+| Part | Fits on | Notes |
+| --- | --- | --- |
+| Web (`apps/web`, Next.js) | Vercel Hobby, Cloudflare Pages / Workers via OpenNext, Netlify | `NEXT_PUBLIC_API_URL` is baked in at build time. |
+| API (`apps/api`, Fastify) | Render free web service (Koyeb / Fly are similar) | Free instances sleep after ~15 idle minutes and wake in about a minute — fine for trying things, not for a live site: visitors' players fetch the config from the API. Use `STORAGE_PROVIDER=s3` (the free disk is wiped on every deploy) and `TRUST_PROXY=true`. |
+| Postgres | Supabase free (500 MB) or Neon free (1 GB) | pg-boss polls every 1–3 s, which keeps the database awake: on Neon that spends the 100 compute-hours/month in about two weeks, so prefer Supabase for an always-on queue. Render's own free Postgres is deleted after 30 days. |
+| Media (`S3_*`) | Cloudflare R2 (10 GB, no egress fees) | Already supported: `STORAGE_PROVIDER=s3`, `S3_PUBLIC_URL` on a custom domain. |
+| E-mail | Resend free tier | `RESEND_API_KEY` + `MAIL_FROM` on a verified domain. |
+| Worker (`apps/worker`) | **Nothing free that fits well** | Needs FFmpeg + Google Chrome on x86. Run it on any PC that is on when you upload or export (it needs only `DATABASE_URL` and the `S3_*` bucket, no inbound port), on the cheapest VPS (€4–6 / month), or on Oracle Cloud's Always Free ARM instance (capacity is hit-and-miss and Chrome has no ARM Linux build, so H.264 sources may not decode there). |
+
+So a **demo or internal setup** can run for $0 (Vercel + Render free + Supabase + R2 + the worker on your own PC). **A real site** wants the API awake: a $7 Render instance, or simply the one small VPS from the previous section, which runs everything. Free-tier terms change often — check the providers' pricing pages before relying on the numbers above (checked 2026-11-10).

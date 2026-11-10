@@ -1,5 +1,65 @@
 # Changelog
 
+## Phase 15 — WordPress.org readiness (plugin 0.7.0, runtime 0.7.0) + super admin support tools (2026-11-10)
+
+### WordPress plugin 0.7.0 — audited against the Plugin Directory guidelines
+- **Prefixes**: every PHP name was already `SceneFlow_` / `sceneflow_` / `SCENEFLOW_` (classes, functions, constants, options, transients, hooks, script handles, REST namespace, shortcode, block, template globals); the **player runtime** still used a 2-letter `sf-` prefix, which the guidelines reject ("don't use two or three letter prefixes") and which clashes with common theme libraries (Superfish menus use `sf-*`). Runtime classes are now `sceneflow-*` (root `sceneflow-root`, so it never collides with the plugin's own `.sceneflow-player` container), data attributes `data-sceneflow-*`, CSS variables `--sceneflow-*`, browser-storage keys `sceneflow_cc` / `sceneflow_sid`. 360 references updated (runtime, tests, editor CSS, export worker, e2e scripts); runtime 34.8 KB gzip.
+- **Escaping late**: every place that prints player markup now passes it through `wp_kses()` with an explicit allow-list (`SceneFlow_Frontend::allowed_html()`: the container div and resource-hint links) instead of a `phpcs:ignore` comment; shortcode `class` values go through `sanitize_html_class()`; the draft-preview page loads its CSS with `wp_add_inline_style()`.
+- **Sanitising / validation**: REST routes declare their arguments (`search` sanitized and capped, `page` 1–1000, media `type` enum); the cloud only sends `image` / `video`.
+- **Redirects**: one-click connect uses `wp_safe_redirect()` with the SceneFlow app host added through `allowed_redirect_hosts` only for that request.
+- **Capabilities / nonces** (re-checked, unchanged): admin screen and every admin-post handler need `manage_options` + a nonce; private REST routes need the HMAC signature (timestamp + single-use nonce); public routes serve only published content; the block's project list needs `edit_posts`.
+- **Element picker** never posts to `*`: without the connected app's origin it does not start.
+- **Privacy**: playback analytics is **opt-in** (off until the site owner turns it on; the settings page asks once after connecting); suggested privacy-policy text under Settings → Privacy; the public health check gives WordPress as major.minor and no PHP version.
+- **On-demand assets**: nothing from the plugin is registered or loaded on pages without a player; the WooCommerce adapter (and its Store API nonce) is set up only when a player renders; the block script only loads in the editor; the picker only with a valid token.
+- **Translations**: `Domain Path: /languages`, `languages/sceneflow.pot` (97 strings, PHP + block.js + block.json); picker texts are translatable.
+- **Formatting**: PHP by phpcs (WordPress standard); the hand-written JS / block.json by `wp-prettier` with `@wordpress/prettier-config` (WordPress JavaScript style). `pnpm check:wp` runs phpcs, the JS formatting check, a fresh `.pot` comparison and the PHP tests; `pnpm format:wp` rewrites the JS.
+- `block.asset.php` has the direct-access guard and follows the plugin version; readme: 0.7.0 changelog + upgrade notice.
+
+### Super admin: support tools
+- **Sign in as this user** (Users → account): a 1-hour session flagged with the admin's id (`sessions.impersonator_id`, migration 0009). An orange bar on every page names both accounts with **Return to admin**; password / profile changes answer 403 `IMPERSONATING`; the console stays closed; the user's own last sign-in is untouched; start and end are audited. Not for super admins or disabled accounts. Both directions reload the page, so no state of one account survives in the other.
+- **Send password reset link**: the user gets the normal one-time link by mail; the admin never sees it (outbox fallback without a mail service). Reset issuing moved to `lib/reset.ts`, shared with "Forgot your password?".
+- **Sites** tab: every connected site with status, last error, plugin version against the latest release (`update` badge from the release manifest), platform version, published count, last seen, and **Check now** (the stored version used to date from pairing time; `refreshSiteHealth()` is shared with the owner's Check button).
+- **Download CSV** of accounts (same filters, ≤ 10 000 rows, spreadsheet-formula cells neutralised, audited as `users.export_csv`).
+- **System** lists the last failed MP4 exports with their error. The worker heartbeat proved itself on day one: it showed a stale worker from an earlier run still pulling jobs with old code.
+
+### Fixed
+- After switching accounts in one tab (sign-in as someone else, "Sign in as"), the projects page could ask for the previous account's workspace ("You do not have access to this workspace"): the session now clears the workspace list whenever the account changes.
+
+## Phase 14 — Super admin console (2026-11-10)
+
+### Added
+- **`/admin`** for the people who run the SceneFlow server (an *Admin* link in the header, only for them). Five tabs:
+  - **Overview**: accounts (disabled, super admins), sign-ups and sign-ins over 7 / 30 days, workspaces and teams, published projects, connected sites, upload storage, MP4 exports (failed ones), player events, workspaces per plan, the five workspaces using the most storage.
+  - **Users**: search by name or e-mail, filter by status and role, last sign-in, devices signed in. One account opens with its workspaces and admin history and four actions: **disable / enable** (disabling ends every session at once and blocks sign-in; nothing is deleted), **sign out everywhere**, **make / remove super admin**.
+  - **Workspaces**: search by name or owner, filter by plan; members, sites (status, last seen), projects, usage (files, bytes, exports, player events); **change plan** (`free`, `pro`, `agency`, `enterprise` — placeholders until billing attaches prices and limits).
+  - **System**: workers online (each worker now writes a heartbeat every 30 s to `worker_heartbeats`; a warning when none is running), the four job queues by state, stuck uploads / exports, **failed jobs with Retry**, and which mail / AI / storage providers are active, database size, API uptime.
+  - **Audit log**: every console or CLI change with who, what, on what, before → after, and the IP.
+- **`pnpm admin list | grant <email> | revoke <email>`**: the server-side command that makes the first super admin (and can always recover access).
+- API under `/api/v1/admin/*` (`apps/api/src/routes/admin.ts`); `/auth/me` reports `superAdmin`; `users.last_sign_in_at` is recorded on every sign-in. Migration `0008` (`users.platform_role`, `users.last_sign_in_at`, `admin_audit`, `worker_heartbeats`).
+- Tests: 7 API tests (`apps/api/test/admin.test.ts`); `scripts/e2e/admin.mjs` runs the console in two real browsers (CLI grant, disable throws the member out, enable, super admin grant / removal, plan change, System with the live worker and queues, audit log, CLI revoke); `pages.mjs` checks that a normal account sees "Page not found".
+
+### Decisions
+- **The role lives in the database and is granted by the CLI**, not by a list of e-mails in `.env`: there is no e-mail verification, so whoever signs up first with a listed address would become super admin.
+- **Invisible to everyone else**: admin routes answer 404 (not 403) to visitors and normal users, and the role is re-read from the database on every request, so removing it takes effect immediately.
+- **Guard rails instead of trust**: nobody can disable or demote their own account, the last active super admin cannot be removed from the console, only active accounts can be made super admin, and every write is audited in the same request (if the audit row cannot be written, the request fails).
+- **No delete and no impersonation in this version.** Disabling covers abuse without losing data; "sign in as" needs its own audit trail and a visible banner, and comes later if it is needed.
+
+## Phase 13 — E-mail, password reset, account page (2026-11-10)
+
+### Added
+- **Outgoing e-mail** (`packages/server/src/mail`): one `Mailer` behind three providers — **Resend** (HTTP, no dependency; `RESEND_API_KEY`), any **SMTP** server (nodemailer; `SMTP_URL` or `SMTP_HOST/PORT/USER/PASS`), and the **outbox folder** when neither is configured: the message is written as JSON to `<STORAGE_DIR>/outbox` and its links are printed to the API log, so password reset and invitations work on a laptop or a fresh server before any mail service exists. `MAIL_FROM` is required for real delivery; `MAIL_PROVIDER` forces a choice. Templates (`templates.ts`) produce text + a self-contained HTML card (no remote images or fonts): reset link, "password was changed", workspace invitation, "your video is ready".
+- **Forgot password** (`POST /api/v1/auth/forgot`, page `/forgot`): a one-time link valid 60 minutes (`password_resets`: sha256 of the token, newest request replaces the earlier link). The answer is identical for known and unknown addresses and the mail leaves *after* the response, so neither the body nor the timing says who has an account; 5 requests per 15 minutes per IP. `delivery: "email" | "log"` tells the page whether a mail actually left — with no mail service the page explains where the link went instead of pretending.
+- **Reset page** (`/reset/:token`, `GET/POST /api/v1/auth/reset`): shows the masked account (`r•••@domain`), takes the new password, signs out every session of the account, signs this browser in, marks the link used (410 `RESET_USED` / `RESET_EXPIRED` afterwards, 404 for anything else) and mails a "your password was changed" notice pointing at `/forgot`. A reset also lifts the sign-in brute-force lock on that account — whoever holds the mailbox owns it.
+- **Account page** (`/account`, via your e-mail in the header): rename (`PATCH /api/v1/auth/me`) and change password (`POST /api/v1/auth/password`: current password required, other devices signed out, this one stays, notice mailed). The sign-in form has a *Forgot your password?* link that carries the typed address over.
+- **Invitations by e-mail**: when the admin types an address, the invitation (with the join link) is also mailed; the response (`sent`) and the Team page say whether it went out or the link is all there is.
+- **"Your video is ready"**: the worker mails the person who started an MP4 render when the file is ready (same `MAIL_*` settings in `apps/worker/.env`, plus `WEB_ORIGIN` for the link).
+- `scripts/e2e/account.mjs`: the whole flow in a real Chrome against the running stack (two devices, outbox folder, reset, account page, newest password, invitation mail, unknown address). `pages.mjs` walks the new pages. 7 API tests (`apps/api/test/account.test.ts`), 7 mail tests (`packages/server/src/mail/mail.test.ts`).
+
+### Decisions
+- **Outbox fallback instead of a hard requirement.** A mail server is the first thing a self-hoster does not have, and the product must not dead-end at "forgot password". The link stays a real one-time link; it reaches the owner through whoever runs the server.
+- **No account enumeration, no mail-timing leak**: same response for every address, mail sent after the reply (`Mailer.sendLater`). Reset tokens are 32 random bytes, stored hashed, single use, 60 minutes.
+- **Changing the account e-mail is not offered yet** (needs a verification round trip to the new address); the account page says so.
+
 ## Phase 12 — Scroll engine, custom thumbnail, speed, "no visible player", page speed (2026-11-10)
 
 ### Fixed

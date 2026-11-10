@@ -1,19 +1,19 @@
 {
-  "$schema": "https://schemas.wp.org/trunk/block.json",
-  "apiVersion": 3,
-  "name": "sceneflow/player",
-  "version": "0.1.0",
-  "title": "SceneFlow Video",
-  "category": "media",
-  "icon": "video-alt3",
-  "description": "Interactive, shoppable video published from SceneFlow.",
-  "keywords": ["video", "interactive", "shoppable", "sceneflow"],
-  "textdomain": "sceneflow",
-  "attributes": {
-    "projectId": { "type": "string", "default": "" },
-    "maxWidth": { "type": "string", "default": "" }
-  },
-  "supports": { "html": false, "align": ["wide", "full"] },
-  "editorScript": "file:./block.js",
-  "render": "file:./render.php"
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "sceneflow/player",
+	"version": "0.1.0",
+	"title": "SceneFlow Video",
+	"category": "media",
+	"icon": "video-alt3",
+	"description": "Interactive, shoppable video published from SceneFlow.",
+	"keywords": [ "video", "interactive", "shoppable", "sceneflow" ],
+	"textdomain": "sceneflow",
+	"attributes": {
+		"projectId": { "type": "string", "default": "" },
+		"maxWidth": { "type": "string", "default": "" }
+	},
+	"supports": { "html": false, "align": [ "wide", "full" ] },
+	"editorScript": "file:./block.js",
+	"render": "file:./render.php"
 }

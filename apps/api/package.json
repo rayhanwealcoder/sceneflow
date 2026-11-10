@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --env-file=.env --import tsx --watch src/index.ts",
     "start": "node --env-file=.env --import tsx src/index.ts",
+    "admin": "node --env-file=.env --import tsx src/cli/admin.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run"

@@ -35,7 +35,7 @@ const reg = await api("POST", "/api/v1/auth/register", { email: `scroll-${Date.n
 const workspaceId = reg.workspaceId;
 
 // Dummy content: a moving, colourful 10 s clip with a frame counter when the FFmpeg build has drawtext.
-const tmp = await mkdtemp(join(tmpdir(), "sf-scroll-"));
+const tmp = await mkdtemp(join(tmpdir(), "sceneflow-scroll-"));
 const clip = join(tmp, "dummy.mp4");
 const base = ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=duration=10:size=1280x720:rate=30"];
 try {
@@ -102,7 +102,7 @@ async function measure(label, patchConfig, { streamingOnly = false } = {}) {
   await page.waitForTimeout(2500); // let the blob upgrade finish when it applies
   const info = await page.evaluate(() => { const v = document.querySelector("video"); return { src: v.currentSrc.split("/").pop().slice(0, 40), blob: v.currentSrc.startsWith("blob:"), buffered: v.buffered.length ? +(v.buffered.end(v.buffered.length - 1) - v.buffered.start(0)).toFixed(1) : 0, duration: +v.duration.toFixed(1) }; });
   await page.evaluate(() => { window.__m.ticks = []; window.__m.seeks = []; window.__m.sets = 0; });
-  const geo = await page.evaluate(() => { const r = document.querySelector(".sf-scroll").getBoundingClientRect(); return { top: r.top + scrollY, usable: r.height - innerHeight }; });
+  const geo = await page.evaluate(() => { const r = document.querySelector(".sceneflow-scroll").getBoundingClientRect(); return { top: r.top + scrollY, usable: r.height - innerHeight }; });
   const dist = geo.top + geo.usable;
   // Steady scroll: 12 px per frame down, then back up (reverse scrubbing) — about 2200 px each way.
   await page.evaluate(async (total) => {

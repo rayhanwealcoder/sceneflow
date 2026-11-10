@@ -33,6 +33,8 @@ export default function TeamPage() {
   const [inviteRole, setInviteRole] = useState<"viewer" | "editor" | "admin">("editor");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  /** After creating an invite with an address: was it e-mailed (this server can send mail) or is the link all there is? */
+  const [inviteMail, setInviteMail] = useState<{ email: string; sent: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
   const [clientForm, setClientForm] = useState({ name: "", contactName: "", contactEmail: "", brandKitId: "" });
   const [editing, setEditing] = useState<string | null>(null);
@@ -84,8 +86,10 @@ export default function TeamPage() {
   const createInvite = (e: FormEvent) => {
     e.preventDefault();
     void run("invite", async () => {
-      const r = await api<{ url: string }>(`/api/v1/workspaces/${workspace.id}/invites`, { method: "POST", json: { role: inviteRole, email: inviteEmail.trim() || undefined } });
+      const addr = inviteEmail.trim();
+      const r = await api<{ url: string; sent: boolean }>(`/api/v1/workspaces/${workspace.id}/invites`, { method: "POST", json: { role: inviteRole, email: addr || undefined } });
       setInviteUrl(r.url);
+      setInviteMail(addr ? { email: addr, sent: r.sent } : null);
       setInviteEmail("");
       await refreshWorkspaces();
     });
@@ -188,6 +192,11 @@ export default function TeamPage() {
                 {busy === "invite" ? "Creating…" : "Create invite link"}
               </button>
             </form>
+            {inviteMail && (
+              <div className={`alert${inviteMail.sent ? " ok" : ""}`} data-testid={inviteMail.sent ? "invite-sent" : "invite-not-sent"}>
+                {inviteMail.sent ? `Invitation e-mailed to ${inviteMail.email}. The link below works too.` : `This server cannot send e-mail yet: copy the link below and send it to ${inviteMail.email} yourself.`}
+              </div>
+            )}
             {inviteUrl && (
               <div className="review-link">
                 <code data-testid="invite-url">{inviteUrl}</code>

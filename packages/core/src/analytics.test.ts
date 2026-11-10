@@ -74,7 +74,7 @@ describe("player events", () => {
     await p.init();
     p.play();
     // Click the button on scene A → GO_TO_SCENE b (element_click + scene_exit/enter + impression of the hotspot).
-    (document.querySelector("#p [data-sf-layer=btn]") as HTMLElement).click();
+    (document.querySelector("#p [data-sceneflow-layer=btn]") as HTMLElement).click();
     p.pause();
     p.destroy(); // flushes
     await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));

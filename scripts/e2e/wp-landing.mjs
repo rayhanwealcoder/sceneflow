@@ -131,6 +131,8 @@ const { workspaces } = await pageApi(owner, "GET", "/api/v1/workspaces");
 const workspaceId = workspaces[0].id;
 let { sites } = await pageApi(owner, "GET", `/api/v1/sites?workspaceId=${workspaceId}`);
 let site = sites.find((s) => s.url.replace(/\/$/, "") === WP);
+// Analytics is opt-in since plugin 0.7.0: the site owner turns it on (what the settings page asks after connecting).
+await wp("option", "update", "sceneflow_analytics", "1");
 if (!site) {
   const code = await wp("eval", "echo SceneFlow_Settings::create_pairing_code();");
   site = (await pageApi(owner, "POST", "/api/v1/sites/connect", { workspaceId, url: WP, pairingCode: code })).site;
@@ -287,32 +289,32 @@ const nav = await visitor.goto(pageUrl, { waitUntil: "domcontentloaded", timeout
 const html = await nav.text();
 const hints = { fetch: (html.match(/rel="preload" as="fetch"/g) ?? []).length, image: (html.match(/rel="preload" as="image"/g) ?? []).length, preconnect: (html.match(/rel="preconnect" href="http:\/\/localhost:4800"/g) ?? []).length };
 if (hints.fetch < 2 || hints.image < 2 || hints.preconnect < 1) fail("resource hints missing in the page HTML: " + JSON.stringify(hints));
-await visitor.waitForFunction(() => document.querySelectorAll(".sf-player").length >= 2, null, { timeout: 60000 });
-await visitor.waitForSelector(".gc-hero-video .sf-player video", { state: "attached", timeout: 30000 }); // media mounts lazily, a moment after the player
+await visitor.waitForFunction(() => document.querySelectorAll(".sceneflow-root").length >= 2, null, { timeout: 60000 });
+await visitor.waitForSelector(".gc-hero-video .sceneflow-root video", { state: "attached", timeout: 30000 }); // media mounts lazily, a moment after the player
 const look = await visitor.evaluate(() => {
-  const hero = document.querySelector(".gc-hero-video .sf-player");
-  const story = document.querySelector(".story-stage .sf-player");
+  const hero = document.querySelector(".gc-hero-video .sceneflow-root");
+  const story = document.querySelector(".story-stage .sceneflow-root");
   const v = hero?.querySelector("video");
-  return { heroMode: hero?.dataset.sfMode, storyMode: story?.dataset.sfMode, heroBg: hero && getComputedStyle(hero).backgroundColor, storyBg: story && getComputedStyle(story).backgroundColor, playBtn: !!hero?.querySelector(".sf-play"), controls: v?.controls, poster: v?.poster ?? "", storyPin: story?.dataset.sfPin, wrapper: !!document.querySelector("#smooth-wrapper"), smoother: !!(window.ScrollSmoother || document.querySelector("#smooth-content")) };
+  return { heroMode: hero?.dataset.sceneflowMode, storyMode: story?.dataset.sceneflowMode, heroBg: hero && getComputedStyle(hero).backgroundColor, storyBg: story && getComputedStyle(story).backgroundColor, playBtn: !!hero?.querySelector(".sceneflow-play"), controls: v?.controls, poster: v?.poster ?? "", storyPin: story?.dataset.sceneflowPin, wrapper: !!document.querySelector("#smooth-wrapper"), smoother: !!(window.ScrollSmoother || document.querySelector("#smooth-content")) };
 });
 if (look.heroMode !== "autoplay" || look.storyMode !== "scroll" || look.heroBg !== "rgba(0, 0, 0, 0)" || look.storyBg !== "rgba(0, 0, 0, 0)" || look.playBtn || look.controls || !/frame-\d+\.jpg/.test(look.poster)) fail("players do not look as designed: " + JSON.stringify(look));
 if (look.storyPin !== "transform") fail(`expected the transform pin inside the theme's smooth-scroll wrapper, got "${look.storyPin}" (wrapper ${look.wrapper})`);
-await visitor.waitForFunction(() => document.querySelector(".gc-hero-video .sf-player")?.dataset.sfState === "playing", null, { timeout: 20000 });
+await visitor.waitForFunction(() => document.querySelector(".gc-hero-video .sceneflow-root")?.dataset.sceneflowState === "playing", null, { timeout: 20000 });
 // Jump to the offer scene and buy from the WooCommerce card (Store API with a cart token; the response carries the cart).
 await visitor.evaluate(() => { const v = document.querySelector(".gc-hero-video video"); v.currentTime = 8.6; });
-await visitor.waitForSelector(".gc-hero-video .sf-product-btn", { state: "visible", timeout: 15000 });
-const priceText = await visitor.textContent(".gc-hero-video .sf-product-price");
+await visitor.waitForSelector(".gc-hero-video .sceneflow-product-btn", { state: "visible", timeout: 15000 });
+const priceText = await visitor.textContent(".gc-hero-video .sceneflow-product-price");
 if (!/29/.test(priceText ?? "")) fail("live WooCommerce price not shown on the card: " + priceText);
-const [addRes] = await Promise.all([visitor.waitForResponse((r) => /wc\/store\/v1\/cart\/add-item/.test(r.url()), { timeout: 20000 }), visitor.click(".gc-hero-video .sf-product-btn")]);
+const [addRes] = await Promise.all([visitor.waitForResponse((r) => /wc\/store\/v1\/cart\/add-item/.test(r.url()), { timeout: 20000 }), visitor.click(".gc-hero-video .sceneflow-product-btn")]);
 const storeCart = await addRes.json().catch(() => ({}));
-const toast = await visitor.waitForSelector(".sf-toast", { timeout: 10000 }).then((t) => t.evaluate((el) => ({ kind: el.dataset.kind, text: el.textContent }))).catch(() => null);
+const toast = await visitor.waitForSelector(".sceneflow-toast", { timeout: 10000 }).then((t) => t.evaluate((el) => ({ kind: el.dataset.kind, text: el.textContent }))).catch(() => null);
 if (!addRes.ok() || toast?.kind === "error" || !(storeCart.items_count >= 1) || !(storeCart.items ?? []).some((i) => /Glow Face Cream/.test(i.name))) fail(`WooCommerce add-to-cart: store ${addRes.status()}, toast ${JSON.stringify(toast)}, cart ${JSON.stringify({ count: storeCart.items_count, items: (storeCart.items ?? []).map((i) => i.name) })}`);
 step(`visitor: page HTML carries resource hints (config preload ×${hints.fetch}, thumbnail preload ×${hints.image}, preconnect ×${hints.preconnect}); hero autoplays muted with no controls and no play button, transparent player, custom thumbnail; story player pins by ${look.storyPin} (theme uses ScrollSmoother: ${look.smoother}); card shows the live price “${priceText?.trim()}”; "Add to bag" → toast “${toast?.text}”, WooCommerce cart holds ${storeCart.items_count} × ${storeCart.items[0].name}`);
 
 /* ---------- 10. scroll-scrub on the theme: pinned in the centre, smooth, both directions ---------- */
 const anchorInfo = await visitor.evaluate(() => {
-  const p = document.querySelector(".story-stage .sf-player");
-  const c = p.parentElement; // .sf-scroll
+  const p = document.querySelector(".story-stage .sceneflow-root");
+  const c = p.parentElement; // .sceneflow-scroll
   const r = c.getBoundingClientRect();
   return { docTop: r.top + window.scrollY, containerH: r.height, playerH: p.getBoundingClientRect().height, viewport: innerHeight };
 });
@@ -322,8 +324,8 @@ await visitor.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), 
 await visitor.waitForTimeout(1200);
 await visitor.evaluate(() => {
   window.__samples = [];
-  const p = document.querySelector(".story-stage .sf-player");
-  const tick = () => { const v = p.querySelector("video"); const r = p.getBoundingClientRect(); window.__samples.push({ ts: performance.now(), top: r.top, phase: p.dataset.sfPinPhase, t: v ? v.currentTime : -1, sy: scrollY }); window.__raf = requestAnimationFrame(tick); };
+  const p = document.querySelector(".story-stage .sceneflow-root");
+  const tick = () => { const v = p.querySelector("video"); const r = p.getBoundingClientRect(); window.__samples.push({ ts: performance.now(), top: r.top, phase: p.dataset.sceneflowPinPhase, t: v ? v.currentTime : -1, sy: scrollY }); window.__raf = requestAnimationFrame(tick); };
   tick();
 });
 const travelPx = anchorInfo.containerH - anchorInfo.playerH;
@@ -342,7 +344,7 @@ const settled = [];
 for (let i = 0; i < 10; i++) {
   await visitor.mouse.wheel(0, 300);
   await visitor.waitForTimeout(650);
-  settled.push(await visitor.evaluate(() => { const p = document.querySelector(".story-stage .sf-player"); const v = p.querySelector("video"); return { top: p.getBoundingClientRect().top, phase: p.dataset.sfPinPhase, t: v?.currentTime ?? -1 }; }));
+  settled.push(await visitor.evaluate(() => { const p = document.querySelector(".story-stage .sceneflow-root"); const v = p.querySelector("video"); return { top: p.getBoundingClientRect().top, phase: p.dataset.sceneflowPinPhase, t: v?.currentTime ?? -1 }; }));
 }
 const pinned = settled.filter((s) => s.phase === "pinned");
 const offPin = pinned.filter((s) => Math.abs(s.top - anchor) > 3).length;
@@ -370,13 +372,13 @@ step(`scroll on the theme (ScrollSmoother page, ${look.storyPin} pin): at rest t
 const demo = await visitorCtx.newPage();
 watch(demo, "demo");
 await demo.goto(`${API}/demo/${storyProject.id}?v=${pubStory.publishedVersion}`);
-await demo.waitForSelector(".sf-player[data-sf-mode=scroll]", { timeout: 20000 });
-const demoPin = await demo.evaluate(() => document.querySelector(".sf-player").dataset.sfPin);
+await demo.waitForSelector(".sceneflow-root[data-sceneflow-mode=scroll]", { timeout: 20000 });
+const demoPin = await demo.evaluate(() => document.querySelector(".sceneflow-root").dataset.sceneflowPin);
 if (demoPin !== "sticky") fail(`demo page should pin with CSS sticky, got ${demoPin}`);
-await demo.waitForFunction(() => { const v = document.querySelector(".sf-media video"); return v && v.readyState >= 2; }, null, { timeout: 30000 });
+await demo.waitForFunction(() => { const v = document.querySelector(".sceneflow-media video"); return v && v.readyState >= 2; }, null, { timeout: 30000 });
 for (let i = 0; i < 12; i++) { await demo.mouse.wheel(0, 150); await demo.waitForTimeout(60); }
 await demo.waitForTimeout(900);
-const demoState = await demo.evaluate(() => { const p = document.querySelector(".sf-player"); const v = p.querySelector("video"); return { phase: p.dataset.sfPinPhase, top: p.getBoundingClientRect().top, t: v.currentTime, src: v.currentSrc.startsWith("blob:") ? "blob (whole scrub file)" : v.currentSrc.split("/").pop(), position: getComputedStyle(p).position }; });
+const demoState = await demo.evaluate(() => { const p = document.querySelector(".sceneflow-root"); const v = p.querySelector("video"); return { phase: p.dataset.sceneflowPinPhase, top: p.getBoundingClientRect().top, t: v.currentTime, src: v.currentSrc.startsWith("blob:") ? "blob (whole scrub file)" : v.currentSrc.split("/").pop(), position: getComputedStyle(p).position }; });
 if (demoState.phase !== "pinned" || demoState.position !== "sticky" || !(demoState.t > 0.5)) fail("demo page scroll state unexpected: " + JSON.stringify(demoState));
 step(`demo page (no theme): sticky pin, phase ${demoState.phase} at ${demoState.top.toFixed(0)} px, video at ${demoState.t.toFixed(2)} s from ${demoState.src}`);
 

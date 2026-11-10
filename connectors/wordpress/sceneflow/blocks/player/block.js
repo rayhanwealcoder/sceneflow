@@ -18,7 +18,11 @@
 			var alive = true;
 			wp.apiFetch( { path: '/sceneflow/v1/projects' } )
 				.then( function ( r ) {
-					if ( alive ) state[ 1 ]( { loading: false, items: ( r && r.projects ) || [] } );
+					if ( alive )
+						state[ 1 ]( {
+							loading: false,
+							items: ( r && r.projects ) || [],
+						} );
 				} )
 				.catch( function () {
 					if ( alive ) state[ 1 ]( { loading: false, items: [] } );
@@ -34,15 +38,29 @@
 		edit: function ( props ) {
 			var attrs = props.attributes;
 			var projects = useProjects();
-			var options = [ { value: '', label: __( 'Choose a published project…', 'sceneflow' ) } ].concat(
+			var options = [
+				{
+					value: '',
+					label: __( 'Choose a published project…', 'sceneflow' ),
+				},
+			].concat(
 				projects.items.map( function ( p ) {
-					return { value: p.project_id, label: ( p.name || p.project_id ) + ' (v' + p.version + ')' };
+					return {
+						value: p.project_id,
+						label:
+							( p.name || p.project_id ) +
+							' (v' +
+							p.version +
+							')',
+					};
 				} )
 			);
 			var current = projects.items.filter( function ( p ) {
 				return p.project_id === attrs.projectId;
 			} )[ 0 ];
-			var blockProps = useBlockProps( { style: { maxWidth: attrs.maxWidth || undefined } } );
+			var blockProps = useBlockProps( {
+				style: { maxWidth: attrs.maxWidth || undefined },
+			} );
 
 			return el(
 				'div',
@@ -52,11 +70,17 @@
 					null,
 					el(
 						PanelBody,
-						{ title: __( 'SceneFlow project', 'sceneflow' ), initialOpen: true },
+						{
+							title: __( 'SceneFlow project', 'sceneflow' ),
+							initialOpen: true,
+						},
 						projects.loading
 							? el( Spinner )
 							: el( SelectControl, {
-									label: __( 'Published project', 'sceneflow' ),
+									label: __(
+										'Published project',
+										'sceneflow'
+									),
 									value: attrs.projectId,
 									options: options,
 									onChange: function ( v ) {
@@ -69,7 +93,10 @@
 							onChange: function ( v ) {
 								props.setAttributes( { projectId: v } );
 							},
-							help: __( 'Paste an ID from SceneFlow if the project is not listed yet.', 'sceneflow' ),
+							help: __(
+								'Paste an ID from SceneFlow if the project is not listed yet.',
+								'sceneflow'
+							),
 						} ),
 						el( TextControl, {
 							label: __( 'Max width (CSS)', 'sceneflow' ),
@@ -83,12 +110,28 @@
 				),
 				el(
 					Placeholder,
-					{ icon: 'video-alt3', label: __( 'SceneFlow Video', 'sceneflow' ), instructions: attrs.projectId ? '' : __( 'Pick a published project in the block settings.', 'sceneflow' ) },
+					{
+						icon: 'video-alt3',
+						label: __( 'SceneFlow Video', 'sceneflow' ),
+						instructions: attrs.projectId
+							? ''
+							: __(
+									'Pick a published project in the block settings.',
+									'sceneflow'
+							  ),
+					},
 					attrs.projectId
 						? el(
 								'p',
 								{ style: { margin: 0 } },
-								( current ? current.name + ' · v' + current.version : attrs.projectId ) + ' — ' + __( 'the interactive player renders on the live page.', 'sceneflow' )
+								( current
+									? current.name + ' · v' + current.version
+									: attrs.projectId ) +
+									' — ' +
+									__(
+										'the interactive player renders on the live page.',
+										'sceneflow'
+									)
 						  )
 						: null
 				)

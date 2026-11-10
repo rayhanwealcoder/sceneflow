@@ -87,7 +87,7 @@ check("project → analytics (no data yet)");
 
 await page.goto(`${WEB}/projects/${projectId}/preview`);
 await page.waitForSelector("text=Back to editor");
-await page.waitForSelector("[data-sceneflow=ready], .sf-player", { timeout: 15000 });
+await page.waitForSelector("[data-sceneflow=ready], .sceneflow-root", { timeout: 15000 });
 check("preview page renders the player");
 
 await page.goto(`${WEB}/projects/${projectId}/editor`);
@@ -111,6 +111,14 @@ await page.waitForSelector("[data-testid=members]", { timeout: 10000 });
 await page.waitForSelector("[data-testid=create-invite]");
 check("team & clients");
 
+await page.goto(`${WEB}/account`);
+await page.waitForSelector("[data-testid=password-card]", { timeout: 10000 });
+check("account (name + password)");
+
+await page.goto(`${WEB}/admin`);
+await page.waitForSelector("[data-testid=admin-denied]", { timeout: 10000 });
+check("admin console is closed to a normal account");
+
 await page.goto(`${WEB}/review/${"0".repeat(64)}`);
 await page.waitForSelector("[data-testid=review-error]");
 await page.goto(`${WEB}/join/${"0".repeat(64)}`);
@@ -129,10 +137,18 @@ await page.click("text=Sign out");
 await page.waitForURL(`${WEB}/login`);
 check("sign out → login");
 
+await page.goto(`${WEB}/forgot`);
+await page.waitForSelector("[data-testid=forgot-card]");
+await page.goto(`${WEB}/reset/${"0".repeat(64)}`);
+await page.waitForSelector("[data-testid=reset-dead]");
+check("forgot / reset pages (invalid link explains itself)");
+
 // Unauthenticated visit of a protected page bounces to login.
 await page.goto(`${WEB}/projects/${projectId}/editor`);
 await page.waitForURL(/\/login/);
-check("signed-out editor visit → login");
+await page.goto(`${WEB}/account`);
+await page.waitForURL(/\/login/);
+check("signed-out editor / account visit → login");
 
 await browser.close();
 console.log(`\nAll good: ${problems.length} page errors. Project ${projectId} (${email})`);

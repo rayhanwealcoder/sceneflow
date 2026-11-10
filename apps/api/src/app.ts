@@ -4,9 +4,10 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
-import { createAi, createDb, createQueue, createStorage, deriveKey, runMigrations, WordPressConnector, type AiServices, type JobSender } from "@sceneflow/server";
+import { createAi, createDb, createMailer, createQueue, createStorage, deriveKey, runMigrations, WordPressConnector, type AiServices, type JobSender, type Mailer } from "@sceneflow/server";
 import type { AppConfig } from "./config.js";
 import { HttpError, type Ctx } from "./context.js";
+import { adminRoutes } from "./routes/admin.js";
 import { aiRoutes } from "./routes/ai.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { authRoutes } from "./routes/auth.js";
@@ -26,6 +27,8 @@ export interface BuildDeps {
   connector?: WordPressConnector;
   /** Inject fake AI providers in tests; defaults to what the environment configures. */
   ai?: AiServices;
+  /** Inject a recording mailer in tests; defaults to what the environment configures (outbox folder when nothing is set). */
+  mailer?: Mailer;
 }
 
 export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<FastifyInstance> {
@@ -36,10 +39,11 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   const queue = deps.queue ?? (await createQueue(cfg.databaseUrl));
   const connector = deps.connector ?? new WordPressConnector();
   const ai = deps.ai ?? (await createAi(cfg.ai));
-  const ctx: Ctx = { db, storage, queue, connector, ai, siteSecretKey: deriveKey(cfg.sessionSecret, "site-secrets"), cfg };
 
   // trustProxy only behind a reverse proxy (TRUST_PROXY=true): otherwise anyone could spoof X-Forwarded-For and dodge per-IP limits.
   const app = Fastify({ logger: cfg.logger, trustProxy: cfg.trustProxy, bodyLimit: 1024 * 1024 });
+  const mailer = deps.mailer ?? createMailer(cfg.mail, { log: (line) => app.log.info(line) });
+  const ctx: Ctx = { db, storage, queue, connector, ai, mailer, siteSecretKey: deriveKey(cfg.sessionSecret, "site-secrets"), cfg };
 
   // Baseline response hardening: no MIME sniffing, no framing of our HTML (demo / preview pages), private API
   // answers never land in shared caches, referrers stay on our origin.
@@ -88,6 +92,7 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
   await app.register(workspaceRoutes, { ctx });
   await app.register(reviewRoutes, { ctx });
   await app.register(exportRoutes, { ctx });
+  await app.register(adminRoutes, { ctx });
   await app.register(publicRoutes, { ctx });
 
   // Built WordPress plugin zip (pnpm build:wp) for the "Download plugin" button.

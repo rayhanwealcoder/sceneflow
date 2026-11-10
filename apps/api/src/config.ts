@@ -1,5 +1,5 @@
-import { resolve } from "node:path";
-import { storageConfigFromEnv, storageEnvSchema, type AiEnv, type StorageConfig } from "@sceneflow/server";
+import { join, resolve } from "node:path";
+import { mailConfigFromEnv, mailEnvSchema, storageConfigFromEnv, storageEnvSchema, type AiEnv, type MailConfig, type StorageConfig } from "@sceneflow/server";
 import { z } from "zod";
 
 const envSchema = z
@@ -25,7 +25,8 @@ const envSchema = z
     ELEVENLABS_VOICE_ID: z.string().optional(),
     AI_SPEECH_PROVIDER: z.enum(["auto", "elevenlabs", "system", "off"]).optional(),
   })
-  .merge(storageEnvSchema);
+  .merge(storageEnvSchema)
+  .merge(mailEnvSchema);
 
 export interface AppConfig {
   databaseUrl: string;
@@ -45,6 +46,8 @@ export interface AppConfig {
   rateLimits?: boolean;
   /** AI provider keys / choices (see packages/server/src/ai). */
   ai: AiEnv;
+  /** Outgoing e-mail: Resend, SMTP, or the outbox folder when neither is configured (see packages/server/src/mail). */
+  mail: MailConfig;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig & { port: number } {
@@ -64,6 +67,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig &
     trustProxy: e.TRUST_PROXY === "true",
     wpPluginDistDir: resolve(process.cwd(), e.WP_PLUGIN_DIST_DIR),
     ai: { ANTHROPIC_API_KEY: e.ANTHROPIC_API_KEY, AI_MODEL: e.AI_MODEL, AI_TEXT_PROVIDER: e.AI_TEXT_PROVIDER, ELEVENLABS_API_KEY: e.ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID: e.ELEVENLABS_VOICE_ID, AI_SPEECH_PROVIDER: e.AI_SPEECH_PROVIDER },
+    mail: mailConfigFromEnv(e, { defaultOutboxDir: resolve(process.cwd(), e.STORAGE_DIR, "outbox"), resolveDir: (d) => resolve(process.cwd(), d) }),
   };
 }
 
@@ -84,6 +88,7 @@ export function testConfig(storageDir: string, overrides: Partial<AppConfig> = {
     wpPluginDistDir: null,
     rateLimits: false,
     ai: { AI_TEXT_PROVIDER: "starter", AI_SPEECH_PROVIDER: "off" },
+    mail: { provider: "log", from: "SceneFlow <test@localhost>", outboxDir: join(storageDir, "outbox") },
     ...overrides,
   };
 }

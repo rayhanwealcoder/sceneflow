@@ -19,14 +19,34 @@ class SceneFlow_Settings {
 	const PAIRING_MAX_TRY  = 10;
 
 	/**
-	 * Whether players on this site report anonymous playback events to SceneFlow (on by default, see readme
-	 * "External services"). Filter `sceneflow_analytics_enabled` for consent tooling.
+	 * Whether players on this site report anonymous playback events to SceneFlow. Off until the site owner
+	 * turns it on (Settings → SceneFlow; see readme "External services"). Filter `sceneflow_analytics_enabled`
+	 * for consent tooling.
 	 *
 	 * @return bool
 	 */
 	public static function analytics_enabled() {
-		$enabled = '0' !== (string) get_option( self::ANALYTICS_OPTION, '1' );
+		$enabled = '1' === (string) get_option( self::ANALYTICS_OPTION, '0' );
 		return (bool) apply_filters( 'sceneflow_analytics_enabled', $enabled );
+	}
+
+	/**
+	 * Whether the site owner has answered the analytics question yet (the settings page asks once after connecting).
+	 *
+	 * @return bool
+	 */
+	public static function analytics_decided() {
+		return false !== get_option( self::ANALYTICS_OPTION, false );
+	}
+
+	/**
+	 * Host of the SceneFlow app, for wp_safe_redirect()'s allow-list during one-click connect.
+	 *
+	 * @return string
+	 */
+	public static function app_host() {
+		$host = wp_parse_url( self::app_url(), PHP_URL_HOST );
+		return is_string( $host ) ? $host : '';
 	}
 
 	/**

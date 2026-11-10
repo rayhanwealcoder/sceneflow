@@ -47,9 +47,9 @@ describe("Player (base video mode)", () => {
     p.on("ready", ready);
     await p.init();
     expect(ready).toHaveBeenCalledOnce();
-    expect(document.querySelector("#p .sf-media img")).not.toBeNull();
+    expect(document.querySelector("#p .sceneflow-media img")).not.toBeNull();
     expect(document.querySelector("#p video")).toBeNull();
-    expect(document.querySelector("#p .sf-stage [data-sf-layer=cta]")).not.toBeNull();
+    expect(document.querySelector("#p .sceneflow-stage [data-sceneflow-layer=cta]")).not.toBeNull();
     expect(document.querySelector("style[data-sceneflow]")).not.toBeNull();
     expect(p.getState()).toBe("ready");
   });
@@ -68,8 +68,8 @@ describe("Player (base video mode)", () => {
     // Lazy: the custom thumbnail is the first paint.
     const lazy = new Player({ target: "#p", config: { ...custom, canvas: { aspectRatio: "16:9", background: "transparent" } } });
     await lazy.init();
-    expect((document.querySelector("#p .sf-media img") as HTMLImageElement).src).toBe("https://cdn.test/custom-frame.jpg");
-    expect((document.querySelector("#p .sf-player") as HTMLElement).style.background).toBe("transparent");
+    expect((document.querySelector("#p .sceneflow-media img") as HTMLImageElement).src).toBe("https://cdn.test/custom-frame.jpg");
+    expect((document.querySelector("#p .sceneflow-root") as HTMLElement).style.background).toBe("transparent");
     lazy.destroy();
   });
 
@@ -84,7 +84,7 @@ describe("Player (base video mode)", () => {
     p.seek(6);
     expect(changed).toHaveBeenCalledWith({ sceneId: "s2" });
     expect(p.getCurrentScene()).toBe("s2");
-    expect(document.querySelector("#p [data-sf-layer=cta]")).toBeNull(); // scene 2 has no layers
+    expect(document.querySelector("#p [data-sceneflow-layer=cta]")).toBeNull(); // scene 2 has no layers
     p.goToScene("s1");
     expect(p.getCurrentScene()).toBe("s1");
     p.pause();
@@ -97,11 +97,11 @@ describe("Player (base video mode)", () => {
     await p.init();
     const ev = vi.fn();
     p.on("addToCart", ev);
-    (document.querySelector("#p [data-sf-layer=cta]") as HTMLElement).click();
+    (document.querySelector("#p [data-sceneflow-layer=cta]") as HTMLElement).click();
     await waitFor(() => expect(ev).toHaveBeenCalled());
     expect(addToCart).toHaveBeenCalledWith({ product: { provider: "manual", productId: "182", title: "" }, quantity: 1 });
     expect(ev.mock.calls[0]![0]).toMatchObject({ productId: "182", quantity: 1, result: { ok: true } });
-    const toast = document.querySelector("#p .sf-toast")!;
+    const toast = document.querySelector("#p .sceneflow-toast")!;
     expect(toast.textContent).toContain("Added to cart");
     expect(toast.querySelector("a")?.getAttribute("href")).toBe("/cart");
 
@@ -110,10 +110,10 @@ describe("Player (base video mode)", () => {
     await q.init();
     const ev2 = vi.fn();
     q.on("addToCart", ev2);
-    (document.querySelector("#p [data-sf-layer=cta]") as HTMLElement).click();
+    (document.querySelector("#p [data-sceneflow-layer=cta]") as HTMLElement).click();
     await waitFor(() => expect(ev2).toHaveBeenCalled());
     expect(ev2.mock.calls[0]![0].result.ok).toBe(false);
-    expect(document.querySelector("#p .sf-toast[data-kind=error]")).not.toBeNull();
+    expect(document.querySelector("#p .sceneflow-toast[data-kind=error]")).not.toBeNull();
   });
 
   it("emits error for invalid config and missing target", async () => {
@@ -159,13 +159,13 @@ describe("Player (scroll scrub)", () => {
     const p = new Player({ target: "#p", config: scrollConfig, lazy: false });
     await p.init();
     expect(p.getEffectiveMode()).toBe("scroll");
-    const scroll = document.querySelector("#p .sf-scroll") as HTMLElement;
-    const player = document.querySelector("#p .sf-player") as HTMLElement;
+    const scroll = document.querySelector("#p .sceneflow-scroll") as HTMLElement;
+    const player = document.querySelector("#p .sceneflow-root") as HTMLElement;
     // jsdom has no layout: the player length falls back to 56.25 % of the viewport (562.5 px) + 4000 px travel.
     expect(scroll.style.height).toBe("4563px");
-    expect(player.dataset.sfPin).toBe("sticky"); // plain ancestors → CSS sticky does the pinning
+    expect(player.dataset.sceneflowPin).toBe("sticky"); // plain ancestors → CSS sticky does the pinning
     expect(player.style.top).toBe("0px");
-    expect(document.querySelector("#p .sf-play")).toBeNull();
+    expect(document.querySelector("#p .sceneflow-play")).toBeNull();
     const video = document.querySelector("#p video") as HTMLVideoElement;
     expect(video.controls).toBe(false);
     expect(video.muted).toBe(true);
@@ -176,8 +176,8 @@ describe("Player (scroll scrub)", () => {
     p.on("timeupdate", (e) => times.push(e.time));
     window.dispatchEvent(new Event("scroll"));
     expect(times[times.length - 1]).toBeCloseTo(5, 5); // 50% of a 10s video
-    expect(player.dataset.sfPinPhase).toBe("pinned");
-    expect(parseFloat((document.querySelector("#p .sf-progress > i") as HTMLElement).style.width)).toBeCloseTo(50, 1);
+    expect(player.dataset.sceneflowPinPhase).toBe("pinned");
+    expect(parseFloat((document.querySelector("#p .sceneflow-progress > i") as HTMLElement).style.width)).toBeCloseTo(50, 1);
 
     // scrolling back up moves time backwards
     scroll.getBoundingClientRect = () => ({ top: -1000, left: 0, width: 1400, height: 4563, bottom: 3563, right: 1400, x: 0, y: -1000, toJSON: () => ({}) }) as DOMRect;
@@ -188,7 +188,7 @@ describe("Player (scroll scrub)", () => {
     scroll.getBoundingClientRect = () => ({ top: -4500, left: 0, width: 1400, height: 4563, bottom: 63, right: 1400, x: 0, y: -4500, toJSON: () => ({}) }) as DOMRect;
     window.dispatchEvent(new Event("scroll"));
     expect(times[times.length - 1]).toBeCloseTo(10, 5);
-    expect(player.dataset.sfPinPhase).toBe("after");
+    expect(player.dataset.sceneflowPinPhase).toBe("after");
     expect(p.getCurrentScene()).toBe("s2");
     p.play(); // no-op in scroll mode
     expect(p.getState()).toBe("ready");
@@ -204,13 +204,13 @@ describe("Player (scroll scrub)", () => {
     document.body.innerHTML = '<div style="overflow:hidden"><div id="p"></div></div>';
     const fixed = new Player({ target: "#p", config: { ...scrollConfig, playback: { ...scrollConfig.playback, pinPosition: "center", pinOffset: 40 } }, lazy: false });
     await fixed.init();
-    const scroll = document.querySelector("#p .sf-scroll") as HTMLElement;
-    const player = document.querySelector("#p .sf-player") as HTMLElement;
-    expect(player.dataset.sfPin).toBe("fixed");
+    const scroll = document.querySelector("#p .sceneflow-scroll") as HTMLElement;
+    const player = document.querySelector("#p .sceneflow-root") as HTMLElement;
+    expect(player.dataset.sceneflowPin).toBe("fixed");
     // Centre anchor for a 562.5 px player in a 1000 px viewport = 218.75, plus the 40 px offset.
     scroll.getBoundingClientRect = () => ({ top: -1000, left: 100, width: 1200, height: 4563, bottom: 3563, right: 1300, x: 100, y: -1000, toJSON: () => ({}) }) as DOMRect;
     window.dispatchEvent(new Event("scroll"));
-    expect(player.dataset.sfPinPhase).toBe("pinned");
+    expect(player.dataset.sceneflowPinPhase).toBe("pinned");
     expect(player.style.position).toBe("fixed");
     expect(player.style.top).toBe("258.75px");
     expect(player.style.left).toBe("100px");
@@ -218,7 +218,7 @@ describe("Player (scroll scrub)", () => {
     expect(fixed.getCurrentTime()).toBeCloseTo((1258.75 / 4000) * 10, 3);
     scroll.getBoundingClientRect = () => ({ top: 900, left: 100, width: 1200, height: 4563, bottom: 5463, right: 1300, x: 100, y: 900, toJSON: () => ({}) }) as DOMRect;
     window.dispatchEvent(new Event("scroll"));
-    expect(player.dataset.sfPinPhase).toBe("before");
+    expect(player.dataset.sceneflowPinPhase).toBe("before");
     expect(player.style.position).toBe("");
     fixed.destroy();
 
@@ -226,9 +226,9 @@ describe("Player (scroll scrub)", () => {
     document.body.innerHTML = '<div style="position:fixed;overflow:hidden"><div style="transform:translateY(-120px)"><div id="p"></div></div></div>';
     const smooth = new Player({ target: "#p", config: scrollConfig, lazy: false });
     await smooth.init();
-    const scroll2 = document.querySelector("#p .sf-scroll") as HTMLElement;
-    const player2 = document.querySelector("#p .sf-player") as HTMLElement;
-    expect(player2.dataset.sfPin).toBe("transform");
+    const scroll2 = document.querySelector("#p .sceneflow-scroll") as HTMLElement;
+    const player2 = document.querySelector("#p .sceneflow-root") as HTMLElement;
+    expect(player2.dataset.sceneflowPin).toBe("transform");
     scroll2.getBoundingClientRect = () => ({ top: -1000, left: 0, width: 1400, height: 4563, bottom: 3563, right: 1400, x: 0, y: -1000, toJSON: () => ({}) }) as DOMRect;
     window.dispatchEvent(new Event("scroll"));
     expect(player2.style.transform).toBe("translate3d(0,1000px,0)");
@@ -244,17 +244,17 @@ describe("Player (scroll scrub)", () => {
     Object.defineProperty(window, "innerWidth", { value: 1400, configurable: true });
     const p = new Player({ target: "#p", config: { ...scrollConfig, playback: { ...scrollConfig.playback, pin: false, triggerStart: "top center", triggerEnd: "bottom center", markers: true } }, lazy: false });
     await p.init();
-    const scroll = document.querySelector("#p .sf-scroll") as HTMLElement;
-    const player = document.querySelector("#p .sf-player") as HTMLElement;
+    const scroll = document.querySelector("#p .sceneflow-scroll") as HTMLElement;
+    const player = document.querySelector("#p .sceneflow-root") as HTMLElement;
     expect(scroll.style.height).toBe("");
-    expect(player.dataset.sfPin).toBeUndefined();
-    expect(document.querySelectorAll(".sf-marker")).toHaveLength(2);
+    expect(player.dataset.sceneflowPin).toBeUndefined();
+    expect(document.querySelectorAll(".sceneflow-marker")).toHaveLength(2);
     // 500 px player: top at the viewport centre = 0, bottom at the centre = 1, halfway in between = 0.5.
     scroll.getBoundingClientRect = () => ({ top: 250, left: 0, width: 1400, height: 500, bottom: 750, right: 1400, x: 0, y: 250, toJSON: () => ({}) }) as DOMRect;
     window.dispatchEvent(new Event("scroll"));
     expect(p.getCurrentTime()).toBeCloseTo(5, 5);
     p.destroy();
-    expect(document.querySelectorAll(".sf-marker")).toHaveLength(0);
+    expect(document.querySelectorAll(".sceneflow-marker")).toHaveLength(0);
     vi.unstubAllGlobals();
   });
 
@@ -264,7 +264,7 @@ describe("Player (scroll scrub)", () => {
     const mobile = new Player({ target: "#p", config: { ...scrollConfig, playback: { ...scrollConfig.playback, mobileFallback: "normal" } }, lazy: false });
     await mobile.init();
     expect(mobile.getEffectiveMode()).toBe("normal");
-    expect(document.querySelector("#p .sf-scroll")).toBeNull();
+    expect(document.querySelector("#p .sceneflow-scroll")).toBeNull();
     mobile.destroy();
 
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
@@ -273,7 +273,7 @@ describe("Player (scroll scrub)", () => {
     await reduced.init();
     expect(reduced.getEffectiveMode()).toBe("poster");
     expect(document.querySelector("#p video")).toBeNull();
-    expect(document.querySelector("#p .sf-media img")).not.toBeNull();
+    expect(document.querySelector("#p .sceneflow-media img")).not.toBeNull();
     reduced.destroy();
     vi.unstubAllGlobals();
   });
@@ -283,12 +283,12 @@ describe("Player (scenes mode)", () => {
   it("paints scene backgrounds, shows a play button and navigates scenes via actions", async () => {
     const p = new Player({ target: "#p", config: scenesConfig, lazy: false });
     await p.init();
-    const media = document.querySelector("#p .sf-media") as HTMLElement;
+    const media = document.querySelector("#p .sceneflow-media") as HTMLElement;
     expect(media.style.background).toBe("rgb(255, 0, 0)");
-    expect(document.querySelector("#p .sf-play")).not.toBeNull();
+    expect(document.querySelector("#p .sceneflow-play")).not.toBeNull();
     const changed = vi.fn();
     p.on("sceneChange", changed);
-    (document.querySelector("#p [data-sf-layer=go]") as HTMLElement).click();
+    (document.querySelector("#p [data-sceneflow-layer=go]") as HTMLElement).click();
     expect(changed).toHaveBeenCalledWith({ sceneId: "b" });
     expect(p.getCurrentTime()).toBe(2);
     expect(media.style.background).toContain("linear-gradient");

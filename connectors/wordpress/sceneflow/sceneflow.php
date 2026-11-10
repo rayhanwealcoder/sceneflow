@@ -3,20 +3,21 @@
  * Plugin Name:       SceneFlow
  * Plugin URI:        https://sceneflow.app
  * Description:       Interactive and shoppable video from SceneFlow on your WordPress site: shortcode, Gutenberg block, element placements, WooCommerce add-to-cart and a lightweight runtime.
- * Version:           0.6.0
- * Requires at least: 6.2
+ * Version:           0.7.0
+ * Requires at least: 6.3
  * Requires PHP:      7.4
  * Author:            SceneFlow
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       sceneflow
+ * Domain Path:       /languages
  *
  * @package SceneFlow
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SCENEFLOW_VERSION', '0.6.0' );
+define( 'SCENEFLOW_VERSION', '0.7.0' );
 define( 'SCENEFLOW_FILE', __FILE__ );
 define( 'SCENEFLOW_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SCENEFLOW_URL', plugin_dir_url( __FILE__ ) );

@@ -29,6 +29,8 @@ export interface ExportRenderJob {
 /** The API only needs to enqueue; the worker needs the full PgBoss instance. */
 export interface JobSender {
   send(name: string, data: object, options?: PgBoss.SendOptions): Promise<string | null>;
+  /** Puts a failed job back in line (super admin "Retry"). Optional: test fakes leave it out. */
+  retry?(name: string, id: string): Promise<unknown>;
 }
 
 export async function createQueue(connectionString: string): Promise<PgBoss> {

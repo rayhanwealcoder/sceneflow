@@ -47,15 +47,15 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const posted = [];
 page.on("request", (r) => { if (r.url().endsWith("/api/v1/analytics/events") && r.method() === "POST") posted.push(JSON.parse(r.postData())); });
 await page.goto(`${API}/demo/${project.id}`);
-await page.waitForSelector("[data-sceneflow=ready] .sf-play", { timeout: 20000 });
+await page.waitForSelector("[data-sceneflow=ready] .sceneflow-play", { timeout: 20000 });
 // A stand-in cart adapter (like the WooCommerce / Shopify ones) so "Add to cart" stays on the page instead of opening the product link.
 await page.evaluate(() => window.SceneFlow.commerce.register({ id: "manual", addToCart: async () => ({ ok: true, message: "Added (test adapter)" }) }, { default: true }));
-await page.click(".sf-play");                                  // video_play, watch…
+await page.click(".sceneflow-play");                                  // video_play, watch…
 await page.waitForTimeout(700);
-await page.click("[data-sf-layer=cta]");                       // element_click + add_to_cart
+await page.click("[data-sceneflow-layer=cta]");                       // element_click + add_to_cart
 await page.waitForTimeout(400);
-await page.click("[data-sf-layer=hs]");                        // hotspot_click → GO_TO_SCENE b (scene_exit/enter)
-await page.waitForFunction(() => document.querySelector(".sf-player")?.dataset.sfState === "ended", null, { timeout: 15000 }); // video_complete
+await page.click("[data-sceneflow-layer=hs]");                        // hotspot_click → GO_TO_SCENE b (scene_exit/enter)
+await page.waitForFunction(() => document.querySelector(".sceneflow-root")?.dataset.sceneflowState === "ended", null, { timeout: 15000 }); // video_complete
 await page.waitForTimeout(4600);                                // > flush interval (4 s): the batch leaves as a normal fetch we can observe
 await page.close();                                             // pagehide → sendBeacon flushes the rest (not visible to the request listener)
 await browser.close();

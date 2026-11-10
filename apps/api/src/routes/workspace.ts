@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { analyticsEvents, brandKits, clients, comments, projectActivity, projects, sites, users, WORKSPACE_ROLES, workspaceInvites, workspaceMembers, workspaces, type WorkspaceRole } from "@sceneflow/server";
+import { analyticsEvents, brandKits, clients, comments, inviteMail, projectActivity, projects, sites, users, WORKSPACE_ROLES, workspaceInvites, workspaceMembers, workspaces, type WorkspaceRole } from "@sceneflow/server";
 import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
 import { requireMember, requireUser, roleAtLeast } from "../lib/auth.js";
@@ -119,7 +119,13 @@ export async function workspaceRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx 
       .returning({ id: workspaceInvites.id, role: workspaceInvites.role, email: workspaceInvites.email, expiresAt: workspaceInvites.expiresAt, createdAt: workspaceInvites.createdAt });
     // A workspace with invites is a team.
     await ctx.db.update(workspaces).set({ type: "team" }).where(and(eq(workspaces.id, id), eq(workspaces.type, "personal")));
-    return reply.code(201).send({ invite, url: `${ctx.cfg.webOrigin}/join/${token}` });
+    const url = `${ctx.cfg.webOrigin}/join/${token}`;
+    // With an address the invitation is also e-mailed (the admin keeps the link either way; `sent` says whether mail left).
+    if (body.email) {
+      const ws = await ctx.db.query.workspaces.findFirst({ where: eq(workspaces.id, id), columns: { name: true } });
+      ctx.mailer.sendLater({ to: body.email.toLowerCase(), ...inviteMail({ webOrigin: ctx.cfg.webOrigin }, { inviterName: user.name, workspaceName: ws?.name ?? "a workspace", role: body.role, link: url, days: INVITE_DAYS }) });
+    }
+    return reply.code(201).send({ invite, url, sent: Boolean(body.email) && ctx.mailer.delivers });
   });
 
   app.delete<{ Params: { id: string; inviteId: string } }>("/api/v1/workspaces/:id/invites/:inviteId", async (req) => {

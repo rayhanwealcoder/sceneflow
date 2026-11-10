@@ -1,10 +1,10 @@
 === SceneFlow ===
 Contributors: sceneflow
 Tags: video, interactive video, shoppable video, woocommerce, gutenberg
-Requires at least: 6.2
+Requires at least: 6.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.0
+Stable tag: 0.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,7 +18,7 @@ SceneFlow lets you build interactive, shoppable videos in the SceneFlow editor a
 * Place a player on any existing element of a page straight from SceneFlow (no page editing)
 * WooCommerce: pick products in the editor, show live price and stock in the video, add to cart / buy now / apply coupons from the player (WooCommerce is optional)
 * Published videos are stored on your site, so they keep working even if SceneFlow is unreachable
-* Lightweight runtime (about 28 KB gzipped), no jQuery
+* Lightweight runtime (about 35 KB gzipped), no jQuery
 * Secure pairing: one-time code, HMAC-signed publish requests
 
 == External services ==
@@ -28,7 +28,7 @@ This plugin connects your site to the SceneFlow service (https://sceneflow.app),
 * When you connect the site, a one-time pairing code and your site URL are sent to SceneFlow so it can publish to this site. In return the site stores a shared secret used to verify publish requests.
 * When you publish, preview or place a video from the SceneFlow editor, SceneFlow sends the project configuration to this site; the plugin also answers signed requests for your pages, media library items and (if WooCommerce is active) product data so you can pick them in the editor.
 * Video files are served from SceneFlow's media storage to your visitors' browsers when a video plays.
-* Playback analytics (on by default, switch off under Settings → SceneFlow → Advanced): the player sends anonymous events — player loaded, play/pause, how far the video was watched, scene changes, clicks on buttons/hotspots/product cards, add-to-cart — together with the page URL, a device class (desktop/tablet/mobile) and a random per-tab session id. No cookies are set, no IP address or personal data is stored, and visitors with "Do Not Track" or Global Privacy Control are not counted. Cart actions stay on your own site (WooCommerce Store API).
+* Playback analytics (off until you turn it on: the settings page asks once after connecting, and the switch is under Settings → SceneFlow → Advanced): when on, the player sends anonymous events — player loaded, play/pause, how far the video was watched, scene changes, clicks on buttons/hotspots/product cards, add-to-cart — together with the page URL, a device class (desktop/tablet/mobile) and a random per-tab session id. No cookies are set, no IP address or personal data is stored, and visitors with "Do Not Track" or Global Privacy Control are not counted. Cart actions stay on your own site (WooCommerce Store API).
 
 Terms of service: https://sceneflow.app/terms — Privacy policy: https://sceneflow.app/privacy
 
@@ -53,6 +53,14 @@ No. Without WooCommerce, product cards and buttons open the product link you set
 Yes. Published configurations are stored in your database and served from your site; only the media files load from SceneFlow's storage.
 
 == Changelog ==
+
+= 0.7.0 =
+* Playback analytics is now opt-in: nothing is sent until the site owner turns it on (Settings → SceneFlow asks once after connecting). Sites that never changed the switch stop sending events with this update.
+* Suggested privacy policy text under Settings → Privacy.
+* Security hardening: every printed player passes through `wp_kses()` with an explicit allow-list, extra shortcode classes go through `sanitize_html_class()`, REST parameters are declared with sanitizers, one-click connect uses `wp_safe_redirect()` limited to the SceneFlow app host, the element picker only talks to the connected SceneFlow app, and the public health check no longer reveals exact WordPress / PHP versions.
+* The draft preview page loads its CSS through the WordPress style API.
+* Runtime 0.7.0: the player's CSS classes, data attributes and browser-storage keys now use the full `sceneflow-` / `sceneflow_` prefix (was `sf-`), so they cannot clash with other plugins or themes. Custom CSS that targeted `.sf-*` needs the new names (for example `.sceneflow-root`, `.sceneflow-layer`, `.sceneflow-product`).
+* Element-picker texts are translatable; translation template in `languages/sceneflow.pot`.
 
 = 0.6.0 =
 * Scroll-scrub videos now pin reliably on every theme: the player picks the pinning technique the page allows (CSS sticky, position fixed through overflow-clipping wrappers, or a per-frame transform inside smooth-scroll themes such as GSAP ScrollSmoother / Lenis, where sticky and fixed cannot work) and reads its position from the page itself, so the picture and the scroll never disagree.
@@ -86,3 +94,8 @@ Yes. Published configurations are stored in your database and served from your s
 
 = 0.1.0 =
 * First release: pairing, publish, shortcode, block, element placements, draft preview, media listing.
+
+== Upgrade Notice ==
+
+= 0.7.0 =
+Playback analytics becomes opt-in: turn it on under Settings → SceneFlow if you use the Analytics page in SceneFlow. Security hardening.

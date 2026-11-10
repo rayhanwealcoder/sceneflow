@@ -6,7 +6,9 @@
 		if ( ! window.SceneFlow || ! window.SceneFlow.Player ) {
 			return;
 		}
-		var nodes = ( root || document ).querySelectorAll( '[data-sceneflow-id]:not([data-sceneflow-ready])' );
+		var nodes = ( root || document ).querySelectorAll(
+			'[data-sceneflow-id]:not([data-sceneflow-ready])'
+		);
 		Array.prototype.forEach.call( nodes, function ( node ) {
 			node.setAttribute( 'data-sceneflow-ready', '1' );
 			/* Commerce goes through the global registry (SceneFlow.commerce): the WooCommerce adapter registers itself when WooCommerce is active. */
@@ -21,10 +23,17 @@
 			node.sceneflowPlayer = player;
 			var evt;
 			try {
-				evt = new CustomEvent( 'sceneflow:mounted', { detail: { player: player, projectId: node.getAttribute( 'data-sceneflow-id' ) } } );
+				evt = new CustomEvent( 'sceneflow:mounted', {
+					detail: {
+						player: player,
+						projectId: node.getAttribute( 'data-sceneflow-id' ),
+					},
+				} );
 			} catch ( e ) {
 				evt = document.createEvent( 'CustomEvent' );
-				evt.initCustomEvent( 'sceneflow:mounted', true, false, { player: player } );
+				evt.initCustomEvent( 'sceneflow:mounted', true, false, {
+					player: player,
+				} );
 			}
 			node.dispatchEvent( evt );
 		} );
@@ -37,7 +46,12 @@
 			return;
 		}
 		list.forEach( function ( p ) {
-			if ( ! /^[A-Za-z0-9_-]{1,64}$/.test( String( p.id ) ) || document.querySelector( '[data-sceneflow-placement="' + p.id + '"]' ) ) {
+			if (
+				! /^[A-Za-z0-9_-]{1,64}$/.test( String( p.id ) ) ||
+				document.querySelector(
+					'[data-sceneflow-placement="' + p.id + '"]'
+				)
+			) {
 				return;
 			}
 			var target;

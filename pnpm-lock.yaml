@@ -11,9 +11,15 @@ importers:
 
   .:
     devDependencies:
+      '@wordpress/prettier-config':
+        specifier: '4'
+        version: 4.57.0(wp-prettier@3.0.3)
       playwright-core:
         specifier: 1.50.1
         version: 1.50.1
+      prettier:
+        specifier: npm:wp-prettier@3.0.3
+        version: wp-prettier@3.0.3
       turbo:
         specifier: ^2.3.0
         version: 2.11.10
@@ -218,6 +224,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@opentelemetry/api@1.10.0)(gel@2.2.1)(pg@8.23.1)(postgres@3.4.9)
+      nodemailer:
+        specifier: ^7.0.0
+        version: 7.0.13
       pg-boss:
         specifier: ^10.1.5
         version: 10.4.2
@@ -231,6 +240,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.5
+      '@types/nodemailer':
+        specifier: ^7.0.0
+        version: 7.0.12
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11
@@ -1651,6 +1663,9 @@ packages:
   '@types/node@22.20.5':
     resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
 
+  '@types/nodemailer@7.0.12':
+    resolution: {integrity: sha512-80vKwiIsVSyFA1rRovH59jNPLBOuc6dRZIHEu40gXTkBkZnQv8vog1xSGEb9j5q/tdMAs5ivvDR2pLTU0hGHXA==}
+
   '@types/react-dom@19.3.0':
     resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
     peerDependencies:
@@ -1687,6 +1702,12 @@ packages:
 
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
+
+  '@wordpress/prettier-config@4.57.0':
+    resolution: {integrity: sha512-bUL7MI6c6yCKVj2/OBOlFYAJiqozrnBqwQIj+EYMxxjrxnO6ymUvRL8XbqpKHC4xVUBbQ5aw8Sh+zjQ0DaKfaw==}
+    engines: {node: '>=18.12.0'}
+    peerDependencies:
+      prettier: '>=3'
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -2196,6 +2217,10 @@ packages:
       sass:
         optional: true
 
+  nodemailer@7.0.13:
+    resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
+    engines: {node: '>=6.0.0'}
+
   nwsapi@2.2.28:
     resolution: {integrity: sha512-IlVB7OS7qrOsVYlpnFIkETjMwT9jwvmocJmmM+GZU/PAB3uGi9Ezd7vcWhWBUnSc0ya4ppmQITOyP1ez9gg8cg==}
 
@@ -2612,6 +2637,11 @@ packages:
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
     engines: {node: '>=8'}
+    hasBin: true
+
+  wp-prettier@3.0.3:
+    resolution: {integrity: sha512-X4UlrxDTH8oom9qXlcjnydsjAOD2BmB6yFmvS4Z2zdTzqqpRWb+fbqrH412+l+OUXmbzJlSXjlMFYPgYG12IAA==}
+    engines: {node: '>=14'}
     hasBin: true
 
   ws@8.22.2:
@@ -3673,6 +3703,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/nodemailer@7.0.12':
+    dependencies:
+      '@types/node': 22.20.5
+
   '@types/react-dom@19.3.0(@types/react@19.3.0)':
     dependencies:
       '@types/react': 19.3.0
@@ -3720,6 +3754,10 @@ snapshots:
       '@vitest/pretty-format': 2.1.9
       loupe: 3.2.1
       tinyrainbow: 1.2.0
+
+  '@wordpress/prettier-config@4.57.0(wp-prettier@3.0.3)':
+    dependencies:
+      prettier: wp-prettier@3.0.3
 
   abstract-logging@2.0.1: {}
 
@@ -4273,6 +4311,8 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
+  nodemailer@7.0.13: {}
+
   nwsapi@2.2.28: {}
 
   obliterator@2.0.5: {}
@@ -4682,6 +4722,8 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  wp-prettier@3.0.3: {}
 
   ws@8.22.2: {}
 

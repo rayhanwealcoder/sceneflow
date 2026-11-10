@@ -11,12 +11,12 @@ export function applyStyle(el: HTMLElement, style: Record<string, string | numbe
   for (const [key, value] of Object.entries(style)) {
     if (SCALED_PX.has(key)) {
       const n = typeof value === "number" ? value : parseFloat(value);
-      if (Number.isFinite(n)) el.style.setProperty(cssName(key), `calc(${n}px * var(--sf-scale))`);
+      if (Number.isFinite(n)) el.style.setProperty(cssName(key), `calc(${n}px * var(--sceneflow-scale))`);
     } else if (PASSTHROUGH.has(key)) {
       el.style.setProperty(cssName(key), String(value));
     } else if (key === "accent") {
       // Button / highlight colour of composite elements (product card).
-      el.style.setProperty("--sf-accent", String(value));
+      el.style.setProperty("--sceneflow-accent", String(value));
     } else if (key === "fit" && el instanceof HTMLImageElement) {
       el.style.objectFit = String(value);
     }
@@ -37,7 +37,7 @@ export function placeLayer(el: HTMLElement, r: ResolvedLayer, zIndex: number): v
 /** Rotation plus (optional) enter/exit motion, composed into one transform. */
 export function transformFor(rotation: number, m: MotionState | null): string {
   const parts: string[] = [];
-  if (m && (m.translateX || m.translateY)) parts.push(`translate(calc(${m.translateX}px * var(--sf-scale)), calc(${m.translateY}px * var(--sf-scale)))`);
+  if (m && (m.translateX || m.translateY)) parts.push(`translate(calc(${m.translateX}px * var(--sceneflow-scale)), calc(${m.translateY}px * var(--sceneflow-scale)))`);
   if (rotation) parts.push(`rotate(${rotation}deg)`);
   if (m && m.scale !== 1) parts.push(`scale(${m.scale})`);
   return parts.join(" ");
@@ -63,7 +63,7 @@ function createProductCard(layer: Layer): HTMLElement {
   el.dataset.layout = str(c.layout) === "horizontal" ? "horizontal" : "vertical";
   if (bool(c.showImage, true)) {
     const img = document.createElement("img");
-    img.className = "sf-product-img";
+    img.className = "sceneflow-product-img";
     img.alt = "";
     img.decoding = "async";
     img.loading = "lazy";
@@ -73,21 +73,21 @@ function createProductCard(layer: Layer): HTMLElement {
     el.appendChild(img);
   }
   const body = document.createElement("div");
-  body.className = "sf-product-body";
+  body.className = "sceneflow-product-body";
   if (bool(c.showTitle, true)) {
     const title = document.createElement("div");
-    title.className = "sf-product-title";
+    title.className = "sceneflow-product-title";
     title.textContent = ref?.title || "Product";
     body.appendChild(title);
   }
   if (bool(c.showPrice, true)) {
     const price = document.createElement("div");
-    price.className = "sf-product-price";
+    price.className = "sceneflow-product-price";
     const now = document.createElement("span");
-    now.className = "sf-price";
+    now.className = "sceneflow-price";
     now.textContent = ref?.price ?? "";
     const old = document.createElement("s");
-    old.className = "sf-price-old";
+    old.className = "sceneflow-price-old";
     old.textContent = ref?.regularPrice ?? "";
     old.hidden = !ref?.regularPrice;
     price.append(now, old);
@@ -95,17 +95,17 @@ function createProductCard(layer: Layer): HTMLElement {
   }
   if (bool(c.variants, true)) {
     const select = document.createElement("select");
-    select.className = "sf-product-variant";
+    select.className = "sceneflow-product-variant";
     select.setAttribute("aria-label", "Choose an option");
     select.hidden = true; // shown once live variants arrive
     body.appendChild(select);
   }
   if (bool(c.showButton, true)) {
     const actions = document.createElement("div");
-    actions.className = "sf-product-actions";
+    actions.className = "sceneflow-product-actions";
     if (bool(c.quantity, false)) {
       const qty = document.createElement("input");
-      qty.className = "sf-product-qty";
+      qty.className = "sceneflow-product-qty";
       qty.type = "number";
       qty.min = "1";
       qty.max = "99";
@@ -115,14 +115,14 @@ function createProductCard(layer: Layer): HTMLElement {
     }
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "sf-product-btn";
+    btn.className = "sceneflow-product-btn";
     const action = productButtonAction(layer);
     btn.textContent = str(c.buttonLabel) || BUTTON_LABEL[action];
     if (ref?.inStock === false && action !== "view") btn.disabled = true;
     actions.appendChild(btn);
     body.appendChild(actions);
   }
-  if (ref?.inStock === false) el.dataset.sfStock = "out";
+  if (ref?.inStock === false) el.dataset.sceneflowStock = "out";
   el.appendChild(body);
   return el;
 }
@@ -165,12 +165,12 @@ export function createLayerElement(layer: Layer, r: ResolvedLayer, zIndex: numbe
       b.type = "button";
       b.setAttribute("aria-label", str(layer.content.tooltip, "Hotspot"));
       const dot = document.createElement("span");
-      dot.className = "sf-dot";
+      dot.className = "sceneflow-dot";
       b.appendChild(dot);
       const tip = str(layer.content.tooltip);
       if (tip) {
         const t = document.createElement("span");
-        t.className = "sf-tip";
+        t.className = "sceneflow-tip";
         t.textContent = tip;
         b.appendChild(t);
       }
@@ -188,14 +188,14 @@ export function createLayerElement(layer: Layer, r: ResolvedLayer, zIndex: numbe
     default: {
       // audio is handled by the Player; video / form arrive in later phases. Shown only while editing.
       el = document.createElement("div");
-      el.className = "sf-placeholder";
+      el.className = "sceneflow-placeholder";
       el.textContent = layer.name ?? layer.type;
     }
   }
-  el.classList.add("sf-layer", `sf-${layer.type}`);
-  el.dataset.sfLayer = layer.id;
-  if (layer.action) el.dataset.sfAction = layer.action.type;
-  else if (layer.type === "product" && layer.product) el.dataset.sfAction = "PRODUCT";
+  el.classList.add("sceneflow-layer", `sceneflow-${layer.type}`);
+  el.dataset.sceneflowLayer = layer.id;
+  if (layer.action) el.dataset.sceneflowAction = layer.action.type;
+  else if (layer.type === "product" && layer.product) el.dataset.sceneflowAction = "PRODUCT";
   applyStyle(el, r.style);
   placeLayer(el, r, zIndex);
   return el;
@@ -240,7 +240,7 @@ export class Stage {
     private readonly opts: StageOptions = {},
   ) {
     this.el = document.createElement("div");
-    this.el.className = "sf-stage" + (opts.editing ? " sf-editing" : "");
+    this.el.className = "sceneflow-stage" + (opts.editing ? " sceneflow-editing" : "");
     parent.appendChild(this.el);
     if (opts.device && opts.device !== "auto") this.device = opts.device;
     this.updateScale(parent.clientWidth || REF_WIDTH);
@@ -274,7 +274,7 @@ export class Stage {
   }
 
   private updateScale(width: number): void {
-    this.el.style.setProperty("--sf-scale", String(width / REF_WIDTH));
+    this.el.style.setProperty("--sceneflow-scale", String(width / REF_WIDTH));
     if ((this.opts.device ?? "auto") === "auto") {
       const d = deviceFromWidth(width);
       if (d !== this.device) {
@@ -357,23 +357,23 @@ export class Stage {
   setBusy(layerId: string, busy: boolean): void {
     const el = this.layers.get(layerId)?.el;
     if (!el) return;
-    if (busy) el.dataset.sfBusy = "1";
-    else delete el.dataset.sfBusy;
-    const btn = el.querySelector<HTMLButtonElement>(".sf-product-btn");
-    if (btn) btn.disabled = busy || el.dataset.sfStock === "out";
+    if (busy) el.dataset.sceneflowBusy = "1";
+    else delete el.dataset.sceneflowBusy;
+    const btn = el.querySelector<HTMLButtonElement>(".sceneflow-product-btn");
+    if (btn) btn.disabled = busy || el.dataset.sceneflowStock === "out";
   }
 
   private applyProduct(entry: Entry, p: Product): void {
     const { el, layer } = entry;
     const ref = layer.product;
-    const title = el.querySelector<HTMLElement>(".sf-product-title");
+    const title = el.querySelector<HTMLElement>(".sceneflow-product-title");
     if (title) title.textContent = p.name || ref?.title || "Product";
-    const img = el.querySelector<HTMLImageElement>(".sf-product-img");
+    const img = el.querySelector<HTMLImageElement>(".sceneflow-product-img");
     if (img && p.image) {
       img.src = p.image;
       img.hidden = false;
     }
-    const select = el.querySelector<HTMLSelectElement>(".sf-product-variant");
+    const select = el.querySelector<HTMLSelectElement>(".sceneflow-product-variant");
     if (select) {
       select.replaceChildren();
       const variants = p.variations ?? [];
@@ -393,10 +393,10 @@ export class Stage {
 
   private refreshPrice(entry: Entry, p: Product): void {
     const { el } = entry;
-    const select = el.querySelector<HTMLSelectElement>(".sf-product-variant");
+    const select = el.querySelector<HTMLSelectElement>(".sceneflow-product-variant");
     const variant = select && !select.hidden ? p.variations.find((v) => v.id === select.value) : undefined;
-    const now = el.querySelector<HTMLElement>(".sf-price");
-    const old = el.querySelector<HTMLElement>(".sf-price-old");
+    const now = el.querySelector<HTMLElement>(".sceneflow-price");
+    const old = el.querySelector<HTMLElement>(".sceneflow-price-old");
     if (now) now.textContent = variant?.price ?? p.price ?? entry.layer.product?.price ?? "";
     if (old) {
       const reg = variant ? "" : (p.regularPrice ?? "");
@@ -404,18 +404,18 @@ export class Stage {
       old.hidden = !reg;
     }
     const out = variant ? variant.inStock === false : p.stockStatus === "outofstock";
-    if (out) el.dataset.sfStock = "out";
-    else delete el.dataset.sfStock;
-    const btn = el.querySelector<HTMLButtonElement>(".sf-product-btn");
-    if (btn) btn.disabled = (out && productButtonAction(entry.layer) !== "view") || Boolean(el.dataset.sfBusy);
+    if (out) el.dataset.sceneflowStock = "out";
+    else delete el.dataset.sceneflowStock;
+    const btn = el.querySelector<HTMLButtonElement>(".sceneflow-product-btn");
+    if (btn) btn.disabled = (out && productButtonAction(entry.layer) !== "view") || Boolean(el.dataset.sceneflowBusy);
   }
 
   /** Variant and quantity currently chosen on a product card. */
   productSelection(layerId: string): { variantId?: string; quantity: number } {
     const entry = this.layers.get(layerId);
     const ref = entry?.layer.product;
-    const select = entry?.el.querySelector<HTMLSelectElement>(".sf-product-variant");
-    const qty = entry?.el.querySelector<HTMLInputElement>(".sf-product-qty");
+    const select = entry?.el.querySelector<HTMLSelectElement>(".sceneflow-product-variant");
+    const qty = entry?.el.querySelector<HTMLInputElement>(".sceneflow-product-qty");
     const quantity = Math.min(999, Math.max(1, Math.round(Number(qty?.value)) || 1));
     const variantId = select && !select.hidden && select.value ? select.value : ref?.variantId;
     return variantId ? { variantId, quantity } : { quantity };
@@ -423,18 +423,18 @@ export class Stage {
 
   private onChange = (e: Event): void => {
     const target = e.target as HTMLElement | null;
-    if (!target?.classList.contains("sf-product-variant")) return;
-    const host = target.closest<HTMLElement>("[data-sf-layer]");
-    const entry = host ? this.layers.get(host.dataset.sfLayer ?? "") : undefined;
+    if (!target?.classList.contains("sceneflow-product-variant")) return;
+    const host = target.closest<HTMLElement>("[data-sceneflow-layer]");
+    const entry = host ? this.layers.get(host.dataset.sceneflowLayer ?? "") : undefined;
     const live = entry ? this.live.get(entry.layer.id) : undefined;
     if (entry && live) this.refreshPrice(entry, live);
   };
 
   private onClick = (e: MouseEvent): void => {
     const target = e.target as HTMLElement | null;
-    const host = target?.closest<HTMLElement>("[data-sf-layer]");
+    const host = target?.closest<HTMLElement>("[data-sceneflow-layer]");
     if (!host || !this.el.contains(host)) return;
-    const entry = this.layers.get(host.dataset.sfLayer ?? "");
+    const entry = this.layers.get(host.dataset.sceneflowLayer ?? "");
     if (!entry) return;
     // Native controls inside a card (variant select, quantity) keep their own behaviour.
     if (target?.closest("select, input, option")) return;
@@ -448,7 +448,7 @@ export class Stage {
   /** Product cards derive their action from the button + current selection; other layers use `layer.action`. */
   private actionForClick(entry: Entry, target: HTMLElement | null): Action | undefined {
     const { layer } = entry;
-    const onButton = Boolean(target?.closest(".sf-product-btn"));
+    const onButton = Boolean(target?.closest(".sceneflow-product-btn"));
     if (layer.type === "product" && layer.product && (onButton || !layer.action)) {
       const sel = this.productSelection(layer.id);
       const product: ProductRef = { ...layer.product };

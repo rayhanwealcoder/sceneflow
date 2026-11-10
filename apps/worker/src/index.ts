@@ -1,5 +1,7 @@
+import { hostname } from "node:os";
 import { resolve } from "node:path";
-import { createDb, createQueue, createStorage, QUEUES, storageConfigFromEnv, storageEnvSchema, type ExportRenderJob, type MediaFrameJob, type MediaProcessJob, type MediaRenditionsJob, type PgBoss } from "@sceneflow/server";
+import { eq, lt } from "drizzle-orm";
+import { createDb, createMailer, workerHeartbeats, createQueue, createStorage, exportReadyMail, mailConfigFromEnv, mailEnvSchema, projects, QUEUES, storageConfigFromEnv, storageEnvSchema, users, videoExports, type ExportRenderJob, type MediaFrameJob, type MediaProcessJob, type MediaRenditionsJob, type PgBoss } from "@sceneflow/server";
 import { z } from "zod";
 import { renderExport } from "./export.js";
 import { extractFrame, processMedia, processRenditions } from "./process.js";
@@ -13,14 +15,35 @@ const env = z
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
     /** Chrome binary for MP4 exports; default: the installed Google Chrome. */
     EXPORT_BROWSER: z.string().optional(),
+    /** The web app, for the link in the "your video is ready" mail. */
+    WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
   })
   .merge(storageEnvSchema)
+  .merge(mailEnvSchema)
   .parse(process.env);
 
 const publicUrl = env.PUBLIC_URL.replace(/\/$/, "");
 const { db, close } = createDb(env.DATABASE_URL);
 // Same storage config as the API (local disk or S3-compatible bucket) so both read and write the same place.
 const storage = await createStorage(storageConfigFromEnv(env, { publicUrl, secret: env.SESSION_SECRET, resolveDir: (d) => resolve(process.cwd(), d) }));
+
+// Same MAIL_* settings as the API; without them "your video is ready" lands in the outbox folder like every other mail.
+const mailer = createMailer(mailConfigFromEnv(env, { defaultOutboxDir: resolve(process.cwd(), env.STORAGE_DIR, "outbox"), resolveDir: (d) => resolve(process.cwd(), d) }));
+const webOrigin = env.WEB_ORIGIN.replace(/\/$/, "");
+
+/** Tells the person who asked for the render that the file is ready (the project page has the download button). */
+async function notifyExportReady(exportId: string): Promise<void> {
+  const [row] = await db
+    .select({ projectId: videoExports.projectId, fileName: videoExports.fileName, options: videoExports.optionsJson, email: users.email, name: users.name, projectName: projects.name })
+    .from(videoExports)
+    .innerJoin(users, eq(users.id, videoExports.requestedBy))
+    .innerJoin(projects, eq(projects.id, videoExports.projectId))
+    .where(eq(videoExports.id, exportId))
+    .limit(1);
+  if (!row) return;
+  const quality = String((row.options as { quality?: string } | null)?.quality ?? "");
+  mailer.sendLater({ to: row.email, ...exportReadyMail({ webOrigin }, { name: row.name, projectName: row.projectName, fileName: row.fileName ?? "video.mp4", quality, link: `${webOrigin}/projects/${row.projectId}` }) });
+}
 
 const boss = await createQueue(env.DATABASE_URL);
 
@@ -85,12 +108,32 @@ await boss.work<ExportRenderJob>(
     const started = Date.now();
     const r = await renderExport({ db, storage, publicUrl, browserPath: env.EXPORT_BROWSER }, data.exportId);
     console.log(`[worker] export done ${data.exportId}: ${r.frames} frames in ${r.renderMs}ms (${(r.frames / (r.renderMs / 1000)).toFixed(1)} fps), ${(r.sizeBytes / 1024 / 1024).toFixed(1)} MB, ${r.durationSec.toFixed(1)}s${r.slowFrames ? `, ${r.slowFrames} slow frame(s)` : ""}${r.pageErrors.length ? `, page errors: ${r.pageErrors.join(" | ").slice(0, 300)}` : ""}; total ${Date.now() - started}ms`);
+    await notifyExportReady(data.exportId).catch((e: unknown) => console.error(`[worker] export mail skipped: ${e instanceof Error ? e.message : String(e)}`));
   }),
 );
-console.log(`[worker] listening on "${QUEUES.mediaProcess}" (x${env.WORKER_CONCURRENCY}), "${QUEUES.mediaRenditions}" (x1), "${QUEUES.mediaFrame}" (x2) and "${QUEUES.exportRender}" (x1), storage: ${storage.id}`);
+console.log(`[worker] listening on "${QUEUES.mediaProcess}" (x${env.WORKER_CONCURRENCY}), "${QUEUES.mediaRenditions}" (x1), "${QUEUES.mediaFrame}" (x2) and "${QUEUES.exportRender}" (x1), storage: ${storage.id}, mail: ${mailer.provider.label}`);
+
+// Heartbeat for the super admin console (System tab): this process is alive and what it can do.
+const heartbeatId = `${hostname()}:${process.pid}`;
+const startedAt = new Date();
+const heartbeatInfo = { concurrency: env.WORKER_CONCURRENCY, storage: storage.id, mail: mailer.provider.label, chrome: env.EXPORT_BROWSER ?? "installed Google Chrome", node: process.version, platform: `${process.platform}-${process.arch}` };
+async function beat(): Promise<void> {
+  const now = new Date();
+  await db
+    .insert(workerHeartbeats)
+    .values({ id: heartbeatId, host: hostname(), pid: process.pid, startedAt, lastSeenAt: now, infoJson: heartbeatInfo })
+    .onConflictDoUpdate({ target: workerHeartbeats.id, set: { lastSeenAt: now, infoJson: heartbeatInfo } });
+}
+await beat().catch((e: unknown) => console.error("[worker] heartbeat failed:", e instanceof Error ? e.message : e));
+// Rows of workers that stopped without cleaning up (crash, kill -9) are forgotten after a day.
+await db.delete(workerHeartbeats).where(lt(workerHeartbeats.lastSeenAt, new Date(Date.now() - 86_400_000))).catch(() => {});
+const heartbeat = setInterval(() => void beat().catch(() => {}), 30_000);
+heartbeat.unref();
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
+    clearInterval(heartbeat);
+    void db.delete(workerHeartbeats).where(eq(workerHeartbeats.id, heartbeatId)).catch(() => {});
     void boss.stop({ graceful: true, timeout: 30_000 }).then(close).then(() => process.exit(0));
   });
 }

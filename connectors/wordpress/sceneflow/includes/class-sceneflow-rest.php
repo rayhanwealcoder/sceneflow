@@ -79,6 +79,7 @@ class SceneFlow_REST {
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'pages' ),
 				'permission_callback' => array( $this, 'permission_signed' ),
+				'args'                => array( 'search' => self::search_arg() ),
 			)
 		);
 		register_rest_route(
@@ -113,6 +114,15 @@ class SceneFlow_REST {
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'media' ),
 				'permission_callback' => array( $this, 'permission_signed' ),
+				'args'                => array(
+					'search' => self::search_arg(),
+					'page'   => self::page_arg(),
+					'type'   => array(
+						'type'    => 'string',
+						'enum'    => array( '', 'image', 'video' ),
+						'default' => '',
+					),
+				),
 			)
 		);
 		register_rest_route(
@@ -147,6 +157,36 @@ class SceneFlow_REST {
 		if ( SceneFlow_WooCommerce::is_active() ) {
 			SceneFlow_WooCommerce::register_routes( $this );
 		}
+	}
+
+	/**
+	 * Free-text search parameter: plain text, at most 100 characters.
+	 *
+	 * @return array
+	 */
+	public static function search_arg() {
+		return array(
+			'type'              => 'string',
+			'default'           => '',
+			'sanitize_callback' => static function ( $value ) {
+				return mb_substr( sanitize_text_field( (string) $value ), 0, 100 );
+			},
+		);
+	}
+
+	/**
+	 * 1-based page number.
+	 *
+	 * @return array
+	 */
+	public static function page_arg() {
+		return array(
+			'type'              => 'integer',
+			'default'           => 1,
+			'minimum'           => 1,
+			'maximum'           => 1000,
+			'sanitize_callback' => 'absint',
+		);
 	}
 
 	/* ---------- auth ---------- */
@@ -189,15 +229,15 @@ class SceneFlow_REST {
 	/* ---------- public ---------- */
 
 	/**
-	 * Connector version and capabilities. Never leaks secrets.
+	 * Connector version and capabilities. Public, so it never leaks secrets and gives WordPress as major.minor
+	 * only (no exact core / PHP versions for scanners); the full versions are sent once, in the pairing answer.
 	 *
 	 * @return array
 	 */
 	public function health() {
 		return array(
 			'version'      => SCENEFLOW_VERSION,
-			'wp'           => get_bloginfo( 'version' ),
-			'php'          => PHP_VERSION,
+			'wp'           => implode( '.', array_slice( explode( '.', (string) get_bloginfo( 'version' ) ), 0, 2 ) ),
 			'siteName'     => get_bloginfo( 'name' ),
 			'connected'    => SceneFlow_Settings::is_connected(),
 			'capabilities' => $this->capabilities(),

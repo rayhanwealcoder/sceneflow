@@ -96,6 +96,14 @@ Project page → **Download as MP4** (also in the editor's ⋯ menu). Pick what 
 
 Project page → **Something not working?** runs the whole chain for you: draft, media, published version, site reachable, plugin connected, WooCommerce available, pushed version, what the site actually serves, placements. Each line that fails has a button that takes you to the fix.
 
+### 11. Forgot your password? Your account
+
+On the sign-in page, **Forgot your password?** sends a link to your e-mail (valid 60 minutes, works once); open it, choose a new password, and you are signed in — every other device is signed out. Your e-mail address in the top bar opens **Account**: change your name or your password (the current one is required; other devices are signed out, this one stays). If the server has no e-mail service yet, the forgot page says so: the link is written to the server's log and `data/outbox` folder for the person who runs it to pass on.
+
+### 12. Running the server: the Admin console
+
+If you run SceneFlow for other people, make your own account a super admin once on the server: `pnpm admin grant you@example.com` (`pnpm admin list` shows who is one). Sign in again and an **Admin** link appears in the top bar: an overview of the whole server, every account (disable a spammer, sign someone out everywhere, make a colleague a super admin), every workspace (members, sites, projects, storage, plan), the **System** tab (is the worker running, are uploads and exports moving, retry a failed job, which mail / AI / storage services are set up) and an audit log of every change. Nobody can disable or demote themselves, and normal accounts never see the console. For support: **Sign in as this user** (an hour, with an orange bar and *Return to admin*; password and profile stay locked), **Send password reset link**, **Download CSV** of accounts, and the **Sites** tab with every connected website, its plugin version and *Check now*.
+
 ---
 
 ## Part 2 — Running SceneFlow from this repo
@@ -121,11 +129,17 @@ pnpm build && pnpm dev  # web :3000, api :4800, worker
 | `node scripts/e2e/ai.mjs [--record]` | Real Chrome through the UI: AI script → scenes → voiceovers → captions → publish → player; `--record` writes `dist/walkthrough/sceneflow-walkthrough.mp4` |
 | `node scripts/e2e/agency.mjs` | Real Chrome, three browsers: owner adds client + invite → client reviews and approves through the link → publish → dashboard → colleague joins, comments with a pin and a mention |
 | `node scripts/e2e/export.mjs` | Uploads a clip + voice track, builds text / button / hotspot / captions / voiceover, renders a 720p MP4 through the UI, downloads it and checks it with ffprobe + frame samples (keeps `dist/e2e/export-e2e.mp4`) |
+| `node scripts/e2e/admin.mjs [--headed]` | Real Chrome, two browsers: `pnpm admin grant` → Admin console → disable a member (thrown out, cannot sign in) → enable → make / remove super admin → workspace plan → System (worker, queues, services) → audit log → `pnpm admin revoke` |
+| `pnpm check:wp` / `pnpm format:wp` | WordPress.org checks for the plugin: phpcs (WordPress standard), JS formatting (wp-prettier), `.pot` up to date, PHP tests / rewrite the plugin JS in the WordPress style |
+| `pnpm admin list` / `grant <email>` / `revoke <email>` | Super admins of this server (the first one must come from here) |
+| `node scripts/e2e/account.mjs [--headed]` | Real Chrome, two devices: sign up → forgot password → reset link from the outbox folder → new password (other device signed out) → Account page (rename, change password) → newest password → invitation mail → unknown address gets the same answer |
 | `node scripts/e2e/full-local.mjs [--headed --keep-open]` | One fresh account through the whole product in a real Chrome, WordPress included (see the Phase 11 changelog) |
 | `node scripts/e2e/make-demo-clip.mjs out.mp4 [--still out.png]` | Renders a professional-looking 1080p product clip (and a product still) with Chrome + FFmpeg — no stock footage |
 | `node scripts/e2e/wp-landing.mjs [--headed --keep-open]` | On development.local: the rendered clip, an autoplay hero with a WooCommerce card (thumbnail picked in the editor UI), a pinned scroll story, a designed landing page, the element picker UI, the shortcode, the visitor's view (hints, transparent players, add-to-cart), scroll pinning + smoothness on the theme and on the demo page, analytics, diagnostics |
 
 AI keys are optional (`apps/api/.env.example`, section "AI"): without them the API serves starter text and uses the operating system's voice (Windows / macOS built in; `espeak-ng` on Linux).
+
+E-mail is optional too (`apps/api/.env.example`, section "E-mail"): with `RESEND_API_KEY` or `SMTP_URL` plus `MAIL_FROM`, password-reset links, invitations and "your video is ready" go out as real mail; without them they are written to `<STORAGE_DIR>/outbox/*.json` and to the API log, and the pages say so. The worker reads the same `MAIL_*` variables (plus `WEB_ORIGIN`) for the export mail.
 
 Security defaults worth knowing: sign-in is rate-limited per IP and locked progressively per account after 5 wrong passwords; set `TRUST_PROXY=true` only when the API runs behind Nginx / Cloudflare (otherwise forwarded-IP headers are ignored on purpose); run `pnpm audit --prod` before a release.
 
@@ -133,4 +147,4 @@ Local WordPress testing uses a LocalWP site; point the plugin at the local app w
 
 Where things are: `packages/schema` (project format), `packages/core` (published runtime), `packages/editor` (editor domain: ops, templates, presets, brand kit), `packages/server` (DB, storage, queue, connector protocol), `apps/api`, `apps/worker`, `apps/web`, `connectors/*`. Decisions and phase notes: `docs/architecture.md`, `CHANGELOG.md`; the product spec: `docs/SceneFlow_AI_Implementation_Handoff_v1.0.md`.
 
-Deploying to a VPS (no Docker): see the README.
+Deploying to a VPS (no Docker), or without a VPS on free tiers: see the README.

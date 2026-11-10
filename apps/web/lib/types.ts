@@ -39,6 +39,10 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  /** Platform super admin: sees the Admin console (/admin). */
+  superAdmin?: boolean;
+  /** Set while a super admin is signed in as this user ("Sign in as"). */
+  impersonatedBy?: { id: string; email: string; name: string } | null;
 }
 
 export interface Workspace {

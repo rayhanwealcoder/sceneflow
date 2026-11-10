@@ -35,9 +35,9 @@ describe("web fonts (brand kit opt-in)", () => {
     document.body.innerHTML = '<div id="p"></div>';
     const p = new Player({ target: "#p", config });
     await p.init();
-    expect(document.getElementById("sf-font-poppins")).not.toBeNull();
-    expect(document.getElementById("sf-font-playfair-display")).not.toBeNull();
-    expect((document.querySelector("#p [data-sf-layer=t]") as HTMLElement).style.fontFamily).toContain("Poppins");
+    expect(document.getElementById("sceneflow-font-poppins")).not.toBeNull();
+    expect(document.getElementById("sceneflow-font-playfair-display")).not.toBeNull();
+    expect((document.querySelector("#p [data-sceneflow-layer=t]") as HTMLElement).style.fontFamily).toContain("Poppins");
   });
 });
 

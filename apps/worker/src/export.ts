@@ -64,9 +64,9 @@ function renderPageHtml(config: Project, device: Device, width: number, height: 
 <style>
 html,body{margin:0;padding:0;background:${config.canvas.background === "transparent" ? "#fff" : config.canvas.background};overflow:hidden}
 #root{width:${width}px;height:${height}px;position:relative;overflow:hidden}
-.sf-play,.sf-cc,.sf-toast{display:none!important}
-.sf-layer,.sf-captions,.sf-media>*{transition:none!important}
-.sf-hotspot .sf-dot{animation-play-state:paused!important;animation-delay:var(--sf-export-t,0s)!important}
+.sceneflow-play,.sceneflow-cc,.sceneflow-toast{display:none!important}
+.sceneflow-layer,.sceneflow-captions,.sceneflow-media>*{transition:none!important}
+.sceneflow-hotspot .sceneflow-dot{animation-play-state:paused!important;animation-delay:var(--sceneflow-export-t,0s)!important}
 </style></head><body><div id="root"></div>
 <script src="${runtimeUrl}"></script>
 <script>
@@ -124,7 +124,7 @@ html,body{margin:0;padding:0;background:${config.canvas.background === "transpar
     return slow;
   }
   async function waitFonts() {
-    var links = Array.prototype.slice.call(document.querySelectorAll('link[id^="sf-font-"]'));
+    var links = Array.prototype.slice.call(document.querySelectorAll('link[id^="sceneflow-font-"]'));
     await Promise.all(links.map(function (l) {
       return l.sheet ? null : new Promise(function (r) { l.addEventListener('load', r, { once: true }); l.addEventListener('error', r, { once: true }); setTimeout(r, 8000); });
     }));
@@ -142,7 +142,7 @@ html,body{margin:0;padding:0;background:${config.canvas.background === "transpar
       return { state: player.getState(), mode: player.getEffectiveMode(), device: player.getDevice() };
     })(),
     frame: async function (t) {
-      root.style.setProperty('--sf-export-t', '-' + (t % 1.6).toFixed(3) + 's');
+      root.style.setProperty('--sceneflow-export-t', '-' + (t % 1.6).toFixed(3) + 's');
       player.seek(t);
       return settle(t);
     }

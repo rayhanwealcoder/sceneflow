@@ -8,7 +8,9 @@
 
 // phpcs:disable WordPress.Files.FileName
 
+defined( 'ABSPATH' ) || exit;
+
 return array(
 	'dependencies' => array( 'wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-api-fetch', 'wp-i18n' ),
-	'version'      => '0.1.0',
+	'version'      => defined( 'SCENEFLOW_VERSION' ) ? SCENEFLOW_VERSION : '0.7.0',
 );

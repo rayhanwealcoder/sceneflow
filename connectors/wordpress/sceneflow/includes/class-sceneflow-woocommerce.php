@@ -74,6 +74,10 @@ class SceneFlow_WooCommerce {
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( __CLASS__, 'rest_products' ),
 				'permission_callback' => array( $rest, 'permission_signed' ),
+				'args'                => array(
+					'search' => SceneFlow_REST::search_arg(),
+					'page'   => SceneFlow_REST::page_arg(),
+				),
 			)
 		);
 		register_rest_route(

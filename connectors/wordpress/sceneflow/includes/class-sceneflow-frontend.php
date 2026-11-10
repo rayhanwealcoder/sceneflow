@@ -16,7 +16,6 @@ class SceneFlow_Frontend {
 	 * Hooks.
 	 */
 	public function init() {
-		add_action( 'wp_enqueue_scripts', array( $this, 'register_assets' ), 5 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_placements' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'maybe_picker' ) );
 		add_action( 'wp_head', array( $this, 'print_placement_hints' ), 2 );
@@ -68,12 +67,53 @@ class SceneFlow_Frontend {
 		$origin = self::origin_of( $media );
 		if ( $origin && self::origin_of( home_url( '/' ) ) !== $origin ) {
 			// Two connections: images and video elements use a plain one, the runtime's CORS fetch of the scrub file another.
-			$html .= '<link rel="preconnect" href="' . esc_url( $origin ) . '"><link rel="preconnect" href="' . esc_url( $origin ) . '" crossorigin>';
+			$html .= '<link rel="preconnect" href="' . esc_url( $origin ) . '"><link rel="preconnect" href="' . esc_url( $origin ) . '" crossorigin="anonymous">';
 		}
 		if ( $poster ) {
 			$html .= '<link rel="preload" as="image" fetchpriority="high" href="' . esc_url( $poster ) . '">';
 		}
 		return $html;
+	}
+
+	/**
+	 * The only markup this plugin prints for a player: the container div, the "not published" notice and the
+	 * resource-hint links. Every echo of player HTML goes through wp_kses() with this list.
+	 *
+	 * @return array
+	 */
+	public static function allowed_html() {
+		return array(
+			'div'  => array(
+				'class'                 => true,
+				'style'                 => true,
+				'data-sceneflow-id'     => true,
+				'data-sceneflow-config' => true,
+			),
+			'link' => array(
+				'rel'           => true,
+				'as'            => true,
+				'href'          => true,
+				'crossorigin'   => true,
+				'fetchpriority' => true,
+			),
+		);
+	}
+
+	/**
+	 * Space-separated extra classes from a shortcode attribute, each run through sanitize_html_class().
+	 *
+	 * @param string $classes Raw attribute.
+	 * @return string
+	 */
+	public static function clean_classes( $classes ) {
+		$out = array();
+		foreach ( preg_split( '/\s+/', (string) $classes ) as $c ) {
+			$c = sanitize_html_class( $c );
+			if ( '' !== $c ) {
+				$out[] = $c;
+			}
+		}
+		return implode( ' ', array_slice( array_unique( $out ), 0, 10 ) );
 	}
 
 	/**
@@ -98,12 +138,14 @@ class SceneFlow_Frontend {
 			return;
 		}
 		foreach ( $this->placements_for_request() as $p ) {
-			echo self::resource_hints( $p['projectId'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built from escaped parts in resource_hints().
+			echo wp_kses( self::resource_hints( $p['projectId'] ), self::allowed_html() );
 		}
 	}
 
 	/**
-	 * Registers the packaged runtime and the small init script.
+	 * Registers the packaged runtime and the small init script. Called only from enqueue_runtime(), i.e. when
+	 * this request actually renders a player (shortcode, block, placement, preview): pages without a video load
+	 * nothing from this plugin, and the WooCommerce adapter (with its Store API nonce) is set up only then too.
 	 */
 	public function register_assets() {
 		if ( wp_script_is( 'sceneflow-runtime', 'registered' ) ) {
@@ -208,8 +250,9 @@ class SceneFlow_Frontend {
 		}
 		self::enqueue_runtime();
 		// Only a plain CSS length is accepted, so a shortcode attribute can never inject other declarations.
-		$style = SceneFlow_Config::is_valid_css_length( $max_width ) ? ' style="max-width:' . esc_attr( $max_width ) . ';margin-left:auto;margin-right:auto"' : '';
-		return self::resource_hints( $project_id ) . '<div class="sceneflow-player ' . esc_attr( $css_class ) . '" data-sceneflow-id="' . esc_attr( $project_id ) . '" data-sceneflow-config="' . esc_url( self::config_url( $project_id ) ) . '"' . $style . '></div>';
+		$style   = SceneFlow_Config::is_valid_css_length( $max_width ) ? ' style="max-width:' . esc_attr( $max_width ) . ';margin-left:auto;margin-right:auto"' : '';
+		$classes = trim( 'sceneflow-player ' . self::clean_classes( $css_class ) );
+		return self::resource_hints( $project_id ) . '<div class="' . esc_attr( $classes ) . '" data-sceneflow-id="' . esc_attr( $project_id ) . '" data-sceneflow-config="' . esc_url( self::config_url( $project_id ) ) . '"' . $style . '></div>';
 	}
 
 	/**
@@ -301,6 +344,11 @@ class SceneFlow_Frontend {
 					'token'  => $token,
 					'path'   => self::current_path(),
 					'postId' => is_singular() ? (int) get_queried_object_id() : 0,
+					'i18n'   => array(
+						'start'    => __( 'Click the element where the video should go. Esc cancels.', 'sceneflow' ),
+						'selected' => __( 'Selected', 'sceneflow' ),
+						'finish'   => __( 'finish in SceneFlow, or click another element.', 'sceneflow' ),
+					),
 				)
 			) . ';',
 			'before'
@@ -322,6 +370,9 @@ class SceneFlow_Frontend {
 		nocache_headers();
 		$project_id = (string) $data['project_id'];
 		self::enqueue_runtime();
+		wp_register_style( 'sceneflow-preview', false, array(), SCENEFLOW_VERSION );
+		wp_enqueue_style( 'sceneflow-preview' );
+		wp_add_inline_style( 'sceneflow-preview', '.sceneflow-preview-wrap{max-width:1100px;margin:32px auto;padding:0 16px}.sceneflow-preview-note{font:13px/1.4 sans-serif;opacity:.7;margin:0 0 12px}' );
 		?>
 <!DOCTYPE html>
 <html <?php language_attributes(); ?>>
@@ -331,12 +382,11 @@ class SceneFlow_Frontend {
 	<meta name="robots" content="noindex, nofollow">
 	<title><?php esc_html_e( 'SceneFlow preview', 'sceneflow' ); ?></title>
 		<?php wp_head(); ?>
-	<style>.sceneflow-preview-wrap{max-width:1100px;margin:32px auto;padding:0 16px}.sceneflow-preview-note{font:13px/1.4 sans-serif;opacity:.7;margin:0 0 12px}</style>
 </head>
 <body <?php body_class( 'sceneflow-preview' ); ?>>
 	<div class="sceneflow-preview-wrap">
 		<p class="sceneflow-preview-note"><?php esc_html_e( 'Draft preview — not visible to visitors. Scroll-scrub projects need page height: scroll this page to test them.', 'sceneflow' ); ?></p>
-		<?php echo self::render_player( $project_id ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup is escaped in render_player(). ?>
+		<?php echo wp_kses( self::render_player( $project_id ), self::allowed_html() ); ?>
 	</div>
 		<?php wp_footer(); ?>
 </body>

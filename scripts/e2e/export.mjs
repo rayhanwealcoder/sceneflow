@@ -62,7 +62,7 @@ const password = "export-pass-123";
 const reg = await api("POST", "/api/v1/auth/register", { email, password, name: "Export Tester" });
 const workspaceId = reg.workspaceId;
 const { project } = await api("POST", "/api/v1/projects", { workspaceId, name: "Export e2e" });
-const tmp = await mkdtemp(join(tmpdir(), "sf-export-e2e-"));
+const tmp = await mkdtemp(join(tmpdir(), "sceneflow-export-e2e-"));
 const clipPath = join(tmp, "clip.mp4");
 await exec(FFMPEG, ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=duration=5:size=1280x720:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:duration=5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", clipPath]);
 const voicePath = join(tmp, "voice.wav");

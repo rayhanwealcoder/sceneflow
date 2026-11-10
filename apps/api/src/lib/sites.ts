@@ -38,3 +38,23 @@ export function connectorErrorMessage(err: unknown): string {
   if (err instanceof ConnectorError) return err.message;
   return err instanceof Error ? err.message : "Unknown error";
 }
+
+/**
+ * Asks the plugin for its health and stores what it says (plugin and platform version, capabilities, status,
+ * last seen). Used by the site owner's "Check" and by the super admin's "Check now"; never throws for an
+ * unreachable site (the row records the error instead).
+ */
+export async function refreshSiteHealth(ctx: Ctx, site: SiteRow): Promise<SiteRow> {
+  try {
+    const h = await ctx.connector.health(site.url);
+    const [updated] = await ctx.db
+      .update(sites)
+      .set({ connectionStatus: h.health.connected ? "connected" : "error", restBase: h.restBase, connectorVersion: h.health.version, platformVersion: h.health.wp, capabilitiesJson: h.health.capabilities, lastSeenAt: new Date(), lastError: h.health.connected ? null : "The plugin reports it is not connected. Pair the site again.", updatedAt: new Date() })
+      .where(eq(sites.id, site.id))
+      .returning();
+    return updated!;
+  } catch (err) {
+    const [updated] = await ctx.db.update(sites).set({ connectionStatus: "error", lastError: connectorErrorMessage(err), updatedAt: new Date() }).where(eq(sites.id, site.id)).returning();
+    return updated!;
+  }
+}

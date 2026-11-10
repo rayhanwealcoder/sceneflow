@@ -5,7 +5,7 @@ import { ConnectorError, encryptString, normalizeSiteUrl, sitePublications, site
 import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
 import { requireMember, requireUser } from "../lib/auth.js";
-import { assertAllowedSiteUrl, connectorErrorMessage, connectorSite, loadSite, toPublicSite } from "../lib/sites.js";
+import { assertAllowedSiteUrl, connectorErrorMessage, connectorSite, loadSite, refreshSiteHealth, toPublicSite } from "../lib/sites.js";
 import { assertUuid, parseBody } from "../lib/validate.js";
 
 const connectSchema = z.object({
@@ -86,18 +86,7 @@ export async function siteRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     const user = await requireUser(ctx, req);
     const site = await loadSite(ctx, assertUuid(req.params.id, "site id"));
     await requireMember(ctx, user.id, site.workspaceId);
-    try {
-      const h = await ctx.connector.health(site.url);
-      const [updated] = await ctx.db
-        .update(sites)
-        .set({ connectionStatus: h.health.connected ? "connected" : "error", restBase: h.restBase, connectorVersion: h.health.version, platformVersion: h.health.wp, capabilitiesJson: h.health.capabilities, lastSeenAt: new Date(), lastError: h.health.connected ? null : "The plugin reports it is not connected. Pair the site again.", updatedAt: new Date() })
-        .where(eq(sites.id, site.id))
-        .returning();
-      return { site: toPublicSite(updated!) };
-    } catch (err) {
-      const [updated] = await ctx.db.update(sites).set({ connectionStatus: "error", lastError: connectorErrorMessage(err), updatedAt: new Date() }).where(eq(sites.id, site.id)).returning();
-      return { site: toPublicSite(updated!) };
-    }
+    return { site: toPublicSite(await refreshSiteHealth(ctx, site)) };
   });
 
   app.delete<{ Params: { id: string } }>("/api/v1/sites/:id", async (req) => {
@@ -140,7 +129,7 @@ export async function siteRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     const site = await loadSite(ctx, assertUuid(req.params.id, "site id"));
     await requireMember(ctx, user.id, site.workspaceId);
     try {
-      return await ctx.connector.listMedia(connectorSite(ctx, site), { search: req.query.search?.slice(0, 100), type: req.query.type, page: Number(req.query.page) || 1 });
+      return await ctx.connector.listMedia(connectorSite(ctx, site), { search: req.query.search?.slice(0, 100), type: req.query.type === "image" || req.query.type === "video" ? req.query.type : undefined, page: Number(req.query.page) || 1 });
     } catch (err) {
       throw new HttpError(502, "SITE_REQUEST_FAILED", connectorErrorMessage(err));
     }

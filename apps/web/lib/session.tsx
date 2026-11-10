@@ -57,10 +57,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh]);
 
+  // A different account (sign-in, "Sign in as", returning from it) must never see the previous account's
+  // workspace list, not even for one render: clear first, then load.
+  const userId = user?.id;
   useEffect(() => {
-    if (user) void refreshWorkspaces();
-    else setWorkspaces([]);
-  }, [user, refreshWorkspaces]);
+    setWorkspaces([]);
+    if (userId) void refreshWorkspaces();
+  }, [userId, refreshWorkspaces]);
 
   const selectWorkspace = useCallback((id: string) => {
     setChosen(id);

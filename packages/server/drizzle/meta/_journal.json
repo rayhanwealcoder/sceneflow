@@ -50,6 +50,27 @@
       "when": 1794284268092,
       "tag": "0006_fast_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794298946416,
+      "tag": "0007_long_wendell_rand",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794300671042,
+      "tag": "0008_fixed_bromley",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794302819591,
+      "tag": "0009_powerful_anita_blake",
+      "breakpoints": true
     }
   ]
 }

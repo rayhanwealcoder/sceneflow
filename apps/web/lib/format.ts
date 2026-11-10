@@ -1,3 +1,16 @@
+/** 1536 → "1.5 KB"; 0 → "0 B". */
+export function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
 /** 4.2 → "0:04"; 65 → "1:05". */
 export function fmtTime(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));

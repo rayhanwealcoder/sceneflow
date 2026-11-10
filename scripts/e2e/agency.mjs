@@ -90,7 +90,7 @@ watch(client, "client");
 await client.goto(reviewUrl);
 await client.waitForSelector("[data-testid=review-page]");
 try {
-  await client.waitForSelector(".sf-player", { timeout: 30000 });
+  await client.waitForSelector(".sceneflow-root", { timeout: 30000 });
 } catch {
   const text = await client.evaluate(() => document.body.innerText.slice(0, 1200));
   const stage = await client.$eval(".rv-stage", (e) => e.innerHTML.slice(0, 400)).catch(() => "(no .rv-stage)");

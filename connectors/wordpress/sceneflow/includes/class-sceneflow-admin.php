@@ -23,6 +23,34 @@ class SceneFlow_Admin {
 		add_action( 'admin_post_sceneflow_app_url', array( $this, 'handle_app_url' ) );
 		add_action( 'admin_post_sceneflow_analytics', array( $this, 'handle_analytics' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( SCENEFLOW_FILE ), array( $this, 'action_links' ) );
+		add_action( 'admin_init', array( $this, 'privacy_policy' ) );
+	}
+
+	/**
+	 * Suggested text for Settings → Privacy (what the plugin sends where, and that analytics is opt-in).
+	 */
+	public function privacy_policy() {
+		if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
+			return;
+		}
+		$text  = '<p>' . esc_html__( 'Interactive videos on this site are provided by SceneFlow. Video files and images are loaded from SceneFlow’s media storage when a video plays; your browser’s IP address is visible to that storage service like to any web server.', 'sceneflow' ) . '</p>';
+		$text .= '<p>' . esc_html__( 'If the site owner has turned on playback analytics, the player sends anonymous events (video loaded, played, how far it was watched, clicks on buttons and products) with the page address, a device class and a random per-tab id to SceneFlow. No cookies are set, no IP address or personal data is stored, and browsers that send “Do Not Track” or Global Privacy Control are not counted.', 'sceneflow' ) . '</p>';
+		$text .= '<p>' . esc_html__( 'Adding a product to the cart from a video uses this shop’s own cart; nothing about the order is sent to SceneFlow.', 'sceneflow' ) . '</p>';
+		wp_add_privacy_policy_content( 'SceneFlow', wp_kses_post( $text ) );
+	}
+
+	/**
+	 * Lets wp_safe_redirect() send the admin to the SceneFlow app (one-click connect) and nowhere else.
+	 *
+	 * @param array $hosts Allowed hosts.
+	 * @return array
+	 */
+	public function allow_app_host( $hosts ) {
+		$host = SceneFlow_Settings::app_host();
+		if ( '' !== $host ) {
+			$hosts[] = $host;
+		}
+		return $hosts;
 	}
 
 	/**
@@ -70,7 +98,8 @@ class SceneFlow_Admin {
 	 */
 	public function handle_connect() {
 		$this->guard( 'sceneflow_connect' );
-		wp_redirect( SceneFlow_Settings::connect_url() ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- The SceneFlow app is an external, admin-configured origin.
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_app_host' ) );
+		wp_safe_redirect( SceneFlow_Settings::connect_url(), 302, 'SceneFlow' );
 		exit;
 	}
 
@@ -134,6 +163,26 @@ class SceneFlow_Admin {
 				<div class="notice notice-info is-dismissible"><p><?php esc_html_e( 'Disconnected. Published videos keep working.', 'sceneflow' ); ?></p></div>
 			<?php elseif ( $saved ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Settings saved.', 'sceneflow' ); ?></p></div>
+			<?php endif; ?>
+
+			<?php if ( $connection && ! SceneFlow_Settings::analytics_decided() ) : ?>
+				<div class="card" style="max-width:720px;border-left:4px solid #2271b1" id="sceneflow-analytics-question">
+					<h2 style="margin-top:0"><?php esc_html_e( 'See how your videos perform?', 'sceneflow' ); ?></h2>
+					<p><?php esc_html_e( 'SceneFlow can show loads, plays, how far people watch and which buttons and products they click. For that, players on this site send anonymous events to SceneFlow: no cookies, no IP addresses, and visitors with “Do Not Track” are not counted. It stays off unless you turn it on, and you can change it any time under Advanced.', 'sceneflow' ); ?></p>
+					<div style="display:flex;gap:8px;flex-wrap:wrap">
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+							<input type="hidden" name="action" value="sceneflow_analytics">
+							<input type="hidden" name="sceneflow_analytics" value="1">
+							<?php wp_nonce_field( 'sceneflow_analytics' ); ?>
+							<?php submit_button( __( 'Turn on analytics', 'sceneflow' ), 'primary', 'submit', false ); ?>
+						</form>
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+							<input type="hidden" name="action" value="sceneflow_analytics">
+							<?php wp_nonce_field( 'sceneflow_analytics' ); ?>
+							<?php submit_button( __( 'No thanks', 'sceneflow' ), 'secondary', 'submit', false ); ?>
+						</form>
+					</div>
+				</div>
 			<?php endif; ?>
 
 			<?php if ( $connection ) : ?>
@@ -252,7 +301,7 @@ class SceneFlow_Admin {
 					<?php wp_nonce_field( 'sceneflow_analytics' ); ?>
 					<label>
 						<input type="checkbox" name="sceneflow_analytics" value="1" <?php checked( SceneFlow_Settings::analytics_enabled() ); ?>>
-						<?php esc_html_e( 'Send anonymous playback analytics to SceneFlow (loads, plays, clicks — no cookies, no IP addresses, honours Do Not Track)', 'sceneflow' ); ?>
+						<?php esc_html_e( 'Send anonymous playback analytics to SceneFlow (loads, plays, clicks — no cookies, no IP addresses, honours Do Not Track). Off unless you turn it on.', 'sceneflow' ); ?>
 					</label>
 					<?php submit_button( __( 'Save', 'sceneflow' ), 'secondary', 'submit', false ); ?>
 					<p class="description"><?php esc_html_e( 'Powers the Analytics page of each video in SceneFlow. Turn it off if your privacy policy does not cover it.', 'sceneflow' ); ?></p>

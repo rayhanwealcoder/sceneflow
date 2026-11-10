@@ -255,7 +255,7 @@ await owner.waitForTimeout(1500);
 const afterBrand = await pageApi(owner, "GET", `/api/v1/projects/${projectId}`);
 if (afterBrand.draft.config.brand?.kitId !== kit.id) fail("brand kit not recorded on the draft: " + JSON.stringify(afterBrand.draft.config.brand));
 await owner.goto(`${WEB}/projects/${projectId}/preview`);
-await owner.waitForSelector("[data-sceneflow=ready], .sf-player", { timeout: 20000 });
+await owner.waitForSelector("[data-sceneflow=ready], .sceneflow-root", { timeout: 20000 });
 step(`editor shows the 3 scenes; ⋯ → Apply brand kit “Glow” → draft carries brand ref (kit v${afterBrand.draft.config.brand.version}); preview page renders the player`);
 
 /* ---------- 9. renditions ready, then publish from the project page ---------- */
@@ -276,27 +276,27 @@ watch(demo, "demo");
 const posted = [];
 demo.on("request", (r) => { if (r.url().endsWith("/api/v1/analytics/events") && r.method() === "POST") { try { posted.push(JSON.parse(r.postData())); } catch {} } });
 await demo.goto(`${API}/demo/${projectId}`);
-await demo.waitForSelector("[data-sceneflow=ready] .sf-media video", { timeout: 20000 });
+await demo.waitForSelector("[data-sceneflow=ready] .sceneflow-media video", { timeout: 20000 });
 await demo.evaluate(() => window.SceneFlow.commerce.register({ id: "manual", addToCart: async (line) => ({ ok: true, message: `Added ${line.quantity} × ${line.product.title} (test adapter)` }), applyCoupon: async (code) => ({ ok: true, message: `Coupon ${code} applied (test adapter)` }) }, { default: true }));
-await demo.click(".sf-media video", { position: { x: 8, y: 8 } }); // user activation, like a visitor pressing the native play control
-await demo.evaluate(() => document.querySelector(".sf-media video").play());
-await demo.waitForFunction(() => document.querySelector(".sf-player")?.dataset.sfState === "playing", null, { timeout: 10000 });
-await demo.waitForFunction(() => (document.querySelector(".sf-captions")?.textContent ?? "").length > 0, null, { timeout: 8000 });
-const cue1 = await demo.textContent(".sf-captions");
+await demo.click(".sceneflow-media video", { position: { x: 8, y: 8 } }); // user activation, like a visitor pressing the native play control
+await demo.evaluate(() => document.querySelector(".sceneflow-media video").play());
+await demo.waitForFunction(() => document.querySelector(".sceneflow-root")?.dataset.sceneflowState === "playing", null, { timeout: 10000 });
+await demo.waitForFunction(() => (document.querySelector(".sceneflow-captions")?.textContent ?? "").length > 0, null, { timeout: 8000 });
+const cue1 = await demo.textContent(".sceneflow-captions");
 await demo.waitForFunction(() => player.getCurrentScene() === "s2", null, { timeout: 10000 });
 await demo.waitForTimeout(1800);
-const benefitsVisible = await demo.evaluate(() => ["b1", "b2", "b3"].map((id) => getComputedStyle(document.querySelector(`[data-sf-layer=${id}]`)).visibility !== "hidden"));
-await demo.click("[data-sf-layer=hs]"); // GO_TO_SCENE s3
+const benefitsVisible = await demo.evaluate(() => ["b1", "b2", "b3"].map((id) => getComputedStyle(document.querySelector(`[data-sceneflow-layer=${id}]`)).visibility !== "hidden"));
+await demo.click("[data-sceneflow-layer=hs]"); // GO_TO_SCENE s3
 await demo.waitForFunction(() => player.getCurrentScene() === "s3", null, { timeout: 5000 });
-const [popup] = await Promise.all([demo.waitForEvent("popup", { timeout: 10000 }), demo.click("[data-sf-layer=cta]")]);
+const [popup] = await Promise.all([demo.waitForEvent("popup", { timeout: 10000 }), demo.click("[data-sceneflow-layer=cta]")]);
 await popup.waitForLoadState("domcontentloaded").catch(() => {});
 const popupUrl = popup.url();
 await popup.close();
-await demo.click("[data-sf-layer=coupon]");
-await demo.waitForSelector(".sf-toast:has-text('Coupon GLOW10 applied')", { timeout: 5000 });
-await demo.click(".sf-product-btn");
-await demo.waitForSelector(".sf-toast:has-text('Added 1 ×')", { timeout: 5000 });
-await demo.waitForFunction(() => document.querySelector(".sf-player")?.dataset.sfState === "ended", null, { timeout: 15000 });
+await demo.click("[data-sceneflow-layer=coupon]");
+await demo.waitForSelector(".sceneflow-toast:has-text('Coupon GLOW10 applied')", { timeout: 5000 });
+await demo.click(".sceneflow-product-btn");
+await demo.waitForSelector(".sceneflow-toast:has-text('Added 1 ×')", { timeout: 5000 });
+await demo.waitForFunction(() => document.querySelector(".sceneflow-root")?.dataset.sceneflowState === "ended", null, { timeout: 15000 });
 await demo.waitForTimeout(4600);
 const types = [...new Set(posted.flatMap((b) => b.events.map((e) => e.type)))];
 for (const t of ["player_loaded", "video_play", "scene_enter", "hotspot_click", "element_click", "add_to_cart", "coupon_applied", "video_complete"]) if (!types.includes(t)) fail("analytics missing " + t + " in " + types.join(","));
@@ -311,11 +311,11 @@ const visitorCtx = await browser.newContext({ viewport: { width: 1280, height: 8
 const visitor = await visitorCtx.newPage();
 watch(visitor, "visitor");
 await visitor.goto(`${API}/demo/${projectId}?v=${pubScroll.publishedVersion}`);
-await visitor.waitForSelector(".sf-player[data-sf-mode=scroll]", { timeout: 20000 });
-await visitor.waitForFunction(() => { const v = document.querySelector(".sf-media video"); return v && v.readyState >= 2; }, null, { timeout: 20000 });
+await visitor.waitForSelector(".sceneflow-root[data-sceneflow-mode=scroll]", { timeout: 20000 });
+await visitor.waitForFunction(() => { const v = document.querySelector(".sceneflow-media video"); return v && v.readyState >= 2; }, null, { timeout: 20000 });
 for (let i = 0; i < 6; i++) { await visitor.mouse.wheel(0, 500); await visitor.waitForTimeout(250); }
 await visitor.waitForTimeout(800);
-const scrub = await visitor.evaluate(() => { const v = document.querySelector(".sf-media video"); return { t: v?.currentTime ?? -1, src: v?.currentSrc ?? "", scene: player.getCurrentScene() }; });
+const scrub = await visitor.evaluate(() => { const v = document.querySelector(".sceneflow-media video"); return { t: v?.currentTime ?? -1, src: v?.currentSrc ?? "", scene: player.getCurrentScene() }; });
 if (!(scrub.t > 0.3) || !(scrub.src.startsWith("blob:") || scrub.src.includes("scrub-"))) fail("scroll scrub did not drive the video: " + JSON.stringify(scrub));
 await visitorCtx.close();
 await pageApi(owner, "PUT", `/api/v1/projects/${projectId}/draft`, { config: baseConfig });
@@ -357,7 +357,7 @@ const client = await clientCtx.newPage();
 watch(client, "client");
 await client.goto(reviewUrl);
 await client.waitForSelector("[data-testid=review-page]");
-await client.waitForSelector(".sf-player", { timeout: 30000 });
+await client.waitForSelector(".sceneflow-root", { timeout: 30000 });
 await client.fill("[data-testid=reviewer-name]", "Maya (Glow Skincare)");
 await client.click("[data-testid=note-mode]");
 const ovBox = await (await client.$("[data-testid=review-overlay]")).boundingBox();
@@ -464,17 +464,17 @@ if (wpUp) {
   wpPage = await ownerCtx.newPage();
   watch(wpPage, "wordpress");
   await wpPage.goto(pageUrl, { timeout: 120_000, waitUntil: "domcontentloaded" });
-  await wpPage.waitForFunction(() => document.querySelectorAll(".sf-player").length >= 2, null, { timeout: 60000 });
-  await wpPage.click(".sf-player >> nth=0 >> .sf-media video", { position: { x: 8, y: 8 } });
-  await wpPage.evaluate(() => document.querySelector(".sf-player .sf-media video").play());
-  await wpPage.waitForFunction(() => document.querySelector(".sf-player")?.dataset.sfState === "playing", null, { timeout: 15000 });
-  await wpPage.evaluate(() => { const v = document.querySelector(".sf-media video"); if (v) v.currentTime = 8.6; });
-  await wpPage.waitForSelector(".sf-player >> nth=0 >> .sf-product-btn", { state: "visible", timeout: 10000 });
+  await wpPage.waitForFunction(() => document.querySelectorAll(".sceneflow-root").length >= 2, null, { timeout: 60000 });
+  await wpPage.click(".sceneflow-root >> nth=0 >> .sceneflow-media video", { position: { x: 8, y: 8 } });
+  await wpPage.evaluate(() => document.querySelector(".sceneflow-root .sceneflow-media video").play());
+  await wpPage.waitForFunction(() => document.querySelector(".sceneflow-root")?.dataset.sceneflowState === "playing", null, { timeout: 15000 });
+  await wpPage.evaluate(() => { const v = document.querySelector(".sceneflow-media video"); if (v) v.currentTime = 8.6; });
+  await wpPage.waitForSelector(".sceneflow-root >> nth=0 >> .sceneflow-product-btn", { state: "visible", timeout: 10000 });
   // The WooCommerce adapter talks to the Store API with a cart token; the add-item answer carries the resulting cart.
-  const [addRes] = await Promise.all([wpPage.waitForResponse((r) => /wc\/store\/v1\/cart\/add-item/.test(r.url()), { timeout: 20000 }), wpPage.click(".sf-player >> nth=0 >> .sf-product-btn")]);
+  const [addRes] = await Promise.all([wpPage.waitForResponse((r) => /wc\/store\/v1\/cart\/add-item/.test(r.url()), { timeout: 20000 }), wpPage.click(".sceneflow-root >> nth=0 >> .sceneflow-product-btn")]);
   const storeCart = await addRes.json().catch(() => ({}));
   const cart = { count: storeCart.items_count ?? 0, names: (storeCart.items ?? []).map((i) => i.name) };
-  const toast = await wpPage.waitForSelector(".sf-toast", { timeout: 10000 }).then((t) => t.evaluate((el) => ({ kind: el.dataset.kind, text: el.textContent }))).catch(() => null);
+  const toast = await wpPage.waitForSelector(".sceneflow-toast", { timeout: 10000 }).then((t) => t.evaluate((el) => ({ kind: el.dataset.kind, text: el.textContent }))).catch(() => null);
   if (!addRes.ok() || toast?.kind === "error" || !(cart.count >= 1) || !cart.names.some((x) => /Glow Face Cream/.test(x))) fail(`WooCommerce add-to-cart from the player: store ${addRes.status()}, toast ${JSON.stringify(toast)}, cart ${JSON.stringify(cart)}`);
   const diag2 = await pageApi(owner, "GET", `/api/v1/projects/${projectId}/diagnostics`);
   const d2 = Object.fromEntries(diag2.checks.map((c) => [c.id, c.status]));
@@ -489,7 +489,7 @@ if (wpUp) {
 const embed = await ownerCtx.newPage();
 watch(embed, "embed");
 await embed.setContent(`<!doctype html><body style="margin:0;background:#111"><div data-sceneflow-id="${projectId}" style="max-width:900px;margin:30px auto"></div><script src="${API}/runtime/sceneflow.runtime.min.js" data-auto defer></script></body>`);
-await embed.waitForSelector("[data-sceneflow=ready] .sf-player", { timeout: 20000 });
+await embed.waitForSelector("[data-sceneflow=ready] .sceneflow-root", { timeout: 20000 });
 await embed.close();
 step(`plain HTML embed (one script tag + data-sceneflow-id) mounts the player from /p/…json on a page of another origin`);
 

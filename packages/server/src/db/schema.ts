@@ -4,12 +4,20 @@ import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, prima
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
+export const PLATFORM_ROLES = ["user", "super_admin"] as const;
+export type PlatformRole = (typeof PLATFORM_ROLES)[number];
+/** Plan ids a super admin can assign. Placeholder until billing sets prices and quotas (doc §34). */
+export const PLAN_IDS = ["free", "pro", "agency", "enterprise"] as const;
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   status: text("status", { enum: ["active", "disabled"] }).notNull().default("active"),
+  /** Platform-wide role. `super_admin` opens /admin; granted only by the CLI (`pnpm admin grant`) or another super admin. */
+  platformRole: text("platform_role", { enum: PLATFORM_ROLES }).notNull().default("user"),
+  lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -18,7 +26,53 @@ export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  /** Set when a super admin signed in as this user ("Sign in as", 1 hour, audited). */
+  impersonatorId: uuid("impersonator_id").references((): AnyPgColumn => users.id, { onDelete: "cascade" }),
   createdAt: createdAt(),
+});
+
+/** Password-reset links (`POST /auth/forgot`): one row per link, sha256 of the token as id, 60 minutes, single use. */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("password_resets_user_idx").on(t.userId)],
+);
+
+export const ADMIN_TARGETS = ["user", "workspace", "job", "site", "system"] as const;
+
+/** Every change a super admin makes (doc §29: audit log for role changes). Rows are never edited. */
+export const adminAudit = pgTable(
+  "admin_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorEmail: text("actor_email").notNull(),
+    action: text("action").notNull(),
+    targetType: text("target_type", { enum: ADMIN_TARGETS }).notNull(),
+    targetId: text("target_id").notNull(),
+    targetLabel: text("target_label"),
+    detailJson: jsonb("detail_json").$type<Record<string, unknown>>().notNull().default({}),
+    ip: text("ip"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("admin_audit_created_idx").on(t.createdAt), index("admin_audit_target_idx").on(t.targetType, t.targetId)],
+);
+
+/** Each running worker process writes here every 30 s, so /admin can tell whether uploads and exports will be processed. */
+export const workerHeartbeats = pgTable("worker_heartbeats", {
+  /** host:pid */
+  id: text("id").primaryKey(),
+  host: text("host").notNull(),
+  pid: integer("pid").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  infoJson: jsonb("info_json").$type<Record<string, unknown>>().notNull().default({}),
 });
 
 export const workspaces = pgTable("workspaces", {

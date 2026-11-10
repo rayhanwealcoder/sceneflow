@@ -1,4 +1,4 @@
-import type { AiServices, Db, JobSender, StorageProvider, WordPressConnector } from "@sceneflow/server";
+import type { AiServices, Db, JobSender, Mailer, StorageProvider, WordPressConnector } from "@sceneflow/server";
 import type { AppConfig } from "./config.js";
 
 export interface Ctx {
@@ -8,6 +8,8 @@ export interface Ctx {
   connector: WordPressConnector;
   /** Script / copy / voiceover / captions providers (doc §10.2); always present, degrades without keys. */
   ai: AiServices;
+  /** Outgoing e-mail (password reset, invitations); always present, falls back to the outbox folder. */
+  mailer: Mailer;
   /** Key for encrypting per-site shared secrets at rest. */
   siteSecretKey: Buffer;
   cfg: AppConfig;

@@ -37,13 +37,13 @@ describe("Stage", () => {
     const text = stage.layerElement("t")!;
     expect(text.style.left).toBe("10%");
     expect(text.style.width).toBe("50%");
-    expect(text.style.fontSize).toBe("calc(40px * var(--sf-scale))");
+    expect(text.style.fontSize).toBe("calc(40px * var(--sceneflow-scale))");
     expect(text.textContent).toBe("Hello <b>x</b>");
     expect(text.querySelector("b")).toBeNull();
     const btn = stage.layerElement("b")!;
     expect(btn.tagName).toBe("BUTTON");
     expect(btn.style.transform).toBe("rotate(5deg)");
-    expect(btn.dataset.sfAction).toBe("OPEN_CART");
+    expect(btn.dataset.sceneflowAction).toBe("OPEN_CART");
     expect(stage.layerElement("h")).toBeUndefined(); // hidden layers are not rendered
   });
 
@@ -53,7 +53,7 @@ describe("Stage", () => {
     const text = stage.layerElement("t")!;
     expect(text.style.left).toBe("0%");
     expect(text.style.width).toBe("100%");
-    expect(text.style.fontSize).toBe("calc(24px * var(--sf-scale))");
+    expect(text.style.fontSize).toBe("calc(24px * var(--sceneflow-scale))");
     stage.setDevice("desktop");
     expect(stage.layerElement("t")!.style.width).toBe("50%");
   });
