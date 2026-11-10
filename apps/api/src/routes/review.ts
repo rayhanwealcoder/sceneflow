@@ -5,6 +5,7 @@ import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
 import { logActivity } from "../lib/activity.js";
 import { requireUser, roleAtLeast } from "../lib/auth.js";
+import { notifyApproval, notifyComment } from "../lib/notify.js";
 import { approvalCurrent, encryptToken, hashToken, loadProjectByReviewToken, loadProjectWithRole, newToken, parseMentions, REVIEW_LINK_DAYS, reviewUrl, stripForReview, toProjectDto } from "../lib/review.js";
 import { assertUuid, parseBody } from "../lib/validate.js";
 
@@ -45,7 +46,7 @@ export async function reviewRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
     const user = await requireUser(ctx, req);
     const { project } = await loadProjectWithRole(ctx, user.id, req.params.id);
     const body = parseBody(commentSchema, req.body);
-    const comment = await insertComment(ctx, project.id, { ...body, authorId: user.id, authorName: user.name, source: "team" }, project.workspaceId);
+    const comment = await insertComment(ctx, project, { ...body, authorId: user.id, authorName: user.name, source: "team" });
     await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "comment", actorName: user.name, detail: snippet(body.body) });
     return reply.code(201).send({ comment });
   });
@@ -93,25 +94,28 @@ export async function reviewRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
     let link: string | null = null;
     switch (body.action) {
       case "request_internal":
-        patch = { ...patch, reviewStatus: "internal", reviewVersion: draft!.version };
+        patch = { ...patch, reviewStatus: "internal", reviewVersion: draft!.version, reviewRequestedBy: user.id };
+        await notifyApproval(ctx, project, "requested", user, body.note);
         await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "review_requested", actorName: user.name, detail: body.note });
         break;
       case "request_client": {
         const ensured = await ensureReviewLink(ctx, project);
         link = ensured.url;
-        patch = { ...patch, ...ensured.patch, reviewStatus: "client", reviewVersion: draft!.version };
+        patch = { ...patch, ...ensured.patch, reviewStatus: "client", reviewVersion: draft!.version, reviewRequestedBy: user.id };
         await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "client_review_requested", actorName: user.name, detail: body.note });
         break;
       }
       case "approve":
         if (!roleAtLeast(role, "admin")) throw new HttpError(403, "ADMIN_REQUIRED", "Only an admin or the owner can approve. Editors send it for review.");
         patch = { ...patch, reviewStatus: "approved", approvedVersion: draft!.version, approvedChecksum: draft!.checksum, approvedBy: user.name, approvedAt: now };
+        await notifyApproval(ctx, project, "approved", user, body.note);
         await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "approved", actorName: user.name, detail: body.note ?? `v${draft!.version}` });
         break;
       case "request_changes":
         if (!roleAtLeast(role, "admin")) throw new HttpError(403, "ADMIN_REQUIRED", "Only an admin or the owner can request changes here. Leave a comment instead.");
         patch = { ...patch, reviewStatus: "changes" };
-        if (body.note) await insertComment(ctx, project.id, { body: body.note, authorId: user.id, authorName: user.name, source: "team" }, project.workspaceId);
+        await notifyApproval(ctx, project, "changes_requested", user, body.note);
+        if (body.note) await insertComment(ctx, project, { body: body.note, authorId: user.id, authorName: user.name, source: "team" });
         await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "changes_requested", actorName: user.name, detail: body.note ? snippet(body.note) : null });
         break;
       case "reset":
@@ -169,7 +173,7 @@ export async function reviewRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
   app.post<{ Params: { token: string } }>("/api/v1/review/:token/comments", publicLimit, async (req, reply) => {
     const project = await loadProjectByReviewToken(ctx, req.params.token);
     const body = parseBody(guestCommentSchema, req.body);
-    const comment = await insertComment(ctx, project.id, { ...body, authorId: null, authorName: body.name, source: "client" }, project.workspaceId);
+    const comment = await insertComment(ctx, project, { ...body, authorId: null, authorName: body.name, source: "client" });
     await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "client_comment", actorName: body.name, detail: snippet(body.body) });
     return reply.code(201).send({ comment });
   });
@@ -199,7 +203,8 @@ export async function reviewRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
       .set({ reviewStatus: "approved", approvedVersion: draft.version, approvedChecksum: draft.checksum, approvedBy: body.name, approvedAt: now, reviewUpdatedAt: now, updatedAt: now })
       .where(eq(projects.id, project.id))
       .returning();
-    if (body.note) await insertComment(ctx, project.id, { body: body.note, authorId: null, authorName: body.name, source: "client" }, project.workspaceId);
+    if (body.note) await insertComment(ctx, project, { body: body.note, authorId: null, authorName: body.name, source: "client" });
+    await notifyApproval(ctx, project, "approved", { id: null, name: body.name }, body.note);
     await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "approved", actorName: body.name, detail: body.note ? snippet(body.note) : `v${draft.version}` });
     return { status: updated!.reviewStatus, approvedBy: updated!.approvedBy, approvedAt: updated!.approvedAt, version: draft.version };
   });
@@ -209,7 +214,8 @@ export async function reviewRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
     const body = parseBody(guestSchema.extend({ note: z.string().trim().min(1).max(2000) }), req.body);
     const now = new Date();
     await ctx.db.update(projects).set({ reviewStatus: "changes", reviewUpdatedAt: now, updatedAt: now }).where(eq(projects.id, project.id));
-    const comment = await insertComment(ctx, project.id, { body: body.note, authorId: null, authorName: body.name, source: "client" }, project.workspaceId);
+    const comment = await insertComment(ctx, project, { body: body.note, authorId: null, authorName: body.name, source: "client" });
+    await notifyApproval(ctx, project, "changes_requested", { id: null, name: body.name }, body.note);
     await logActivity(ctx.db, { workspaceId: project.workspaceId, projectId: project.id, type: "changes_requested", actorName: body.name, detail: snippet(body.note) });
     return { status: "changes", comment };
   });
@@ -229,16 +235,22 @@ async function listComments(ctx: Ctx, projectId: string) {
 
 type NewComment = { body: string; parentId?: string | null; authorId: string | null; authorName: string; source: "team" | "client"; t?: number | null; sceneId?: string | null; layerId?: string | null; x?: number | null; y?: number | null };
 
-async function insertComment(ctx: Ctx, projectId: string, c: NewComment, workspaceId: string) {
+/** Stores a comment (mentions resolved against the workspace members) and mails the people it concerns. */
+async function insertComment(ctx: Ctx, project: { id: string; name: string; workspaceId: string }, c: NewComment) {
+  const projectId = project.id;
+  const workspaceId = project.workspaceId;
+  let parentAuthorId: string | null = null;
   if (c.parentId) {
     const parent = await ctx.db.query.comments.findFirst({ where: and(eq(comments.id, c.parentId), eq(comments.projectId, projectId)) });
     if (!parent) throw new HttpError(404, "COMMENT_NOT_FOUND", "The comment you reply to no longer exists");
+    parentAuthorId = parent.authorId;
   }
   const members = await ctx.db.select({ userId: users.id, name: users.name }).from(workspaceMembers).innerJoin(users, eq(users.id, workspaceMembers.userId)).where(eq(workspaceMembers.workspaceId, workspaceId));
   const [row] = await ctx.db
     .insert(comments)
     .values({ projectId, parentId: c.parentId ?? null, authorId: c.authorId, authorName: c.authorName, source: c.source, body: c.body, t: c.t ?? null, sceneId: c.sceneId ?? null, layerId: c.layerId ?? null, x: c.x ?? null, y: c.y ?? null, mentionsJson: parseMentions(c.body, members) })
     .returning();
+  await notifyComment(ctx, project, { body: c.body, mentions: (row!.mentionsJson as string[] | null) ?? [], parentAuthorId }, { id: c.authorId, name: c.authorName });
   return row!;
 }
 

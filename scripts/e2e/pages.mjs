@@ -142,6 +142,11 @@ await page.waitForSelector("[data-testid=forgot-card]");
 await page.goto(`${WEB}/reset/${"0".repeat(64)}`);
 await page.waitForSelector("[data-testid=reset-dead]");
 check("forgot / reset pages (invalid link explains itself)");
+await page.goto(`${WEB}/sign-in-link/${"0".repeat(64)}`);
+await page.waitForSelector("[data-testid=link-dead]");
+await page.goto(`${WEB}/confirm-email/${"0".repeat(64)}`);
+await page.waitForSelector("[data-testid=confirm-dead]");
+check("sign-in link / confirm e-mail pages (invalid link explains itself)");
 
 // Unauthenticated visit of a protected page bounces to login.
 await page.goto(`${WEB}/projects/${projectId}/editor`);

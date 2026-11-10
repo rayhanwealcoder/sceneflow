@@ -12,5 +12,5 @@ defined( 'ABSPATH' ) || exit;
 
 return array(
 	'dependencies' => array( 'wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-api-fetch', 'wp-i18n' ),
-	'version'      => defined( 'SCENEFLOW_VERSION' ) ? SCENEFLOW_VERSION : '0.7.0',
+	'version'      => defined( 'SCENEFLOW_VERSION' ) ? SCENEFLOW_VERSION : '0.8.0',
 );

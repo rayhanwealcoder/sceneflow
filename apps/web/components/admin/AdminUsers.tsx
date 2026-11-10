@@ -37,6 +37,10 @@ export function AdminUsers({ initialQuery, onOpenWorkspace }: { initialQuery?: s
   const [detail, setDetail] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** A temporary password or sign-in link, shown once (it is not stored in readable form anywhere). */
+  const [secret, setSecret] = useState<{ kind: "password" | "link"; value: string; email: string; note: string } | null>(null);
+  const [linkHours, setLinkHours] = useState(24);
+  const [linkSetup, setLinkSetup] = useState(true);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page) });
@@ -61,6 +65,7 @@ export function AdminUsers({ initialQuery, onOpenWorkspace }: { initialQuery?: s
   const loadDetail = useCallback(async (id: string) => {
     setDetail(await api<Detail>(`/api/v1/admin/users/${id}`));
   }, []);
+  useEffect(() => setSecret(null), [selected]);
   useEffect(() => {
     if (selected) void loadDetail(selected).catch((e) => setMsg({ ok: false, text: errorMessage(e) }));
     else setDetail(null);
@@ -155,6 +160,50 @@ export function AdminUsers({ initialQuery, onOpenWorkspace }: { initialQuery?: s
             >
               Send password reset link
             </button>
+          </div>
+          <div className="stack" style={{ gap: 8 }} data-testid="no-mail-help">
+            <span className="muted small">No access to their mailbox? Hand them one of these yourself (chat, phone). Both are shown once and recorded in the audit log.</span>
+            <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+              <button
+                className="btn sm"
+                disabled={busy || self || u.platformRole === "super_admin" || u.status !== "active"}
+                data-testid="temp-password"
+                onClick={() =>
+                  void act(`Give ${u.email} a temporary password? Their current password stops working, every device is signed out, and their next sign-in asks for a new password.`, async () => {
+                    const r = await api<{ password: string; endedSessions: number }>(`/api/v1/admin/users/${u.id}/temp-password`, { method: "POST" });
+                    setSecret({ kind: "password", value: r.password, email: u.email, note: "Works for one sign-in: they must choose their own password right after." });
+                    return `Temporary password set; ${r.endedSessions} session${r.endedSessions === 1 ? "" : "s"} ended.`;
+                  })
+                }
+              >
+                Set temporary password
+              </button>
+              <select className="input sm" value={linkHours} onChange={(e) => setLinkHours(Number(e.target.value))} aria-label="Link valid for" data-testid="link-hours" style={{ width: "auto" }}>
+                <option value={1}>valid 1 hour</option>
+                <option value={24}>valid 1 day</option>
+                <option value={72}>valid 3 days</option>
+                <option value={168}>valid 7 days</option>
+              </select>
+              <label className="small row" style={{ gap: 4 }}>
+                <input type="checkbox" checked={linkSetup} onChange={(e) => setLinkSetup(e.target.checked)} data-testid="link-setup" />
+                ask for a new password
+              </label>
+              <button
+                className="btn sm"
+                disabled={busy || self || u.platformRole === "super_admin" || u.status !== "active"}
+                data-testid="create-login-link"
+                onClick={() =>
+                  void act(`Create a one-time sign-in link for ${u.email}? Anyone who opens it can sign in as them, so send it only to them. Earlier unused links stop working.`, async () => {
+                    const r = await api<{ link: string; expiresAt: string; passwordSetup: boolean }>(`/api/v1/admin/users/${u.id}/login-link`, { method: "POST", json: { hours: linkHours, passwordSetup: linkSetup } });
+                    setSecret({ kind: "link", value: r.link, email: u.email, note: `Works once, until ${fmtDate(r.expiresAt)}.${r.passwordSetup ? " They choose a new password right after signing in." : ""}` });
+                    return "Sign-in link created.";
+                  })
+                }
+              >
+                Create sign-in link
+              </button>
+            </div>
+            {secret && <SecretBox secret={secret} onClose={() => setSecret(null)} />}
           </div>
           <h3 style={{ margin: 0 }}>Workspaces</h3>
           <div className="table-wrap">
@@ -259,6 +308,36 @@ function UserActions({ u, self, busy, sessions, act, patch }: { u: Row; self: bo
           Make super admin
         </button>
       )}
+    </div>
+  );
+}
+
+/** The temporary password / sign-in link, with a copy button. Closing it is final: it is not shown again. */
+function SecretBox({ secret, onClose }: { secret: { kind: "password" | "link"; value: string; email: string; note: string }; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(secret.value);
+      setCopied(true);
+    } catch {
+      /* clipboard blocked: the value is selectable */
+    }
+  }
+  return (
+    <div className="alert ok stack" style={{ gap: 6 }} data-testid="secret-box">
+      <strong>{secret.kind === "password" ? "Temporary password" : "Sign-in link"} for {secret.email}</strong>
+      <code style={{ userSelect: "all", overflowWrap: "anywhere", fontSize: 15 }} data-testid="secret-value">
+        {secret.value}
+      </code>
+      <span className="small">{secret.note} It is shown only now.</span>
+      <div className="row" style={{ gap: 8 }}>
+        <button className="btn sm" onClick={() => void copy()} data-testid="secret-copy">
+          {copied ? "Copied" : "Copy"}
+        </button>
+        <button className="btn sm" onClick={onClose}>
+          Done
+        </button>
+      </div>
     </div>
   );
 }

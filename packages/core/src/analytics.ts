@@ -87,6 +87,10 @@ export class Analytics {
     return this.sid;
   }
 
+  get projectId(): string {
+    return this.opts.projectId;
+  }
+
   track(type: AnalyticsEventType, data: TrackData = {}): void {
     if (this.disposed) return;
     const ev: AnalyticsEvent = { id: randomId(), type, at: Date.now() };

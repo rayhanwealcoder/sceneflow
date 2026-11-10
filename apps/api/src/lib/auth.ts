@@ -34,12 +34,13 @@ export const cookieOptions = (ctx: Ctx, maxAgeMs: number) => ({ path: "/", httpO
 
 /**
  * New session + cookie. `impersonatorId`: a super admin's "Sign in as" session (short-lived, does not count
- * as the user's own sign-in).
+ * as the user's own sign-in). `passwordSetup`: the session must choose a new password first and may do so
+ * without the current one (temporary password, admin sign-in link).
  */
-export async function startSession(ctx: Ctx, reply: FastifyReply, userId: string, opts: { impersonatorId?: string } = {}): Promise<void> {
+export async function startSession(ctx: Ctx, reply: FastifyReply, userId: string, opts: { impersonatorId?: string; passwordSetup?: boolean } = {}): Promise<void> {
   const token = randomBytes(32).toString("hex");
   const ttl = opts.impersonatorId ? IMPERSONATION_TTL_MS : SESSION_TTL_MS;
-  await ctx.db.insert(sessions).values({ id: hashToken(token), userId, expiresAt: new Date(Date.now() + ttl), impersonatorId: opts.impersonatorId ?? null });
+  await ctx.db.insert(sessions).values({ id: hashToken(token), userId, expiresAt: new Date(Date.now() + ttl), impersonatorId: opts.impersonatorId ?? null, passwordSetup: Boolean(opts.passwordSetup) && !opts.impersonatorId });
   if (!opts.impersonatorId) await ctx.db.update(users).set({ lastSignInAt: new Date() }).where(eq(users.id, userId));
   reply.setCookie(SESSION_COOKIE, token, cookieOptions(ctx, ttl));
 }
@@ -54,8 +55,18 @@ export async function endSession(ctx: Ctx, req: FastifyRequest, reply: FastifyRe
 /**
  * `superAdmin`: platform role, read from the database on every request (never from the cookie).
  * `impersonatedBy`: set when a super admin is signed in as this user (the app shows a banner).
+ * `passwordSetup`: this session has to choose a new password before using the app (temporary password or an
+ * admin's sign-in link); it may set one without knowing the current password.
  */
-export type AuthUser = { id: string; email: string; name: string; superAdmin: boolean; impersonatedBy?: { id: string; email: string; name: string } | null };
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+  superAdmin: boolean;
+  impersonatedBy?: { id: string; email: string; name: string } | null;
+  passwordSetup?: boolean;
+  emailNotifications?: boolean;
+};
 
 const impersonator = alias(users, "impersonator");
 
@@ -63,7 +74,7 @@ export async function getUser(ctx: Ctx, req: FastifyRequest): Promise<AuthUser |
   const token = req.cookies[SESSION_COOKIE];
   if (!token) return null;
   const rows = await ctx.db
-    .select({ id: users.id, email: users.email, name: users.name, status: users.status, platformRole: users.platformRole, impId: impersonator.id, impEmail: impersonator.email, impName: impersonator.name })
+    .select({ id: users.id, email: users.email, name: users.name, status: users.status, platformRole: users.platformRole, emailNotifications: users.emailNotifications, passwordSetup: sessions.passwordSetup, impId: impersonator.id, impEmail: impersonator.email, impName: impersonator.name })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .leftJoin(impersonator, eq(impersonator.id, sessions.impersonatorId))
@@ -73,12 +84,26 @@ export async function getUser(ctx: Ctx, req: FastifyRequest): Promise<AuthUser |
   if (!u || u.status !== "active") return null;
   const impersonatedBy = u.impId && u.impEmail && u.impName ? { id: u.impId, email: u.impEmail, name: u.impName } : null;
   // Inside a "Sign in as" session nobody is a super admin (the target never is; see admin.ts).
-  return { id: u.id, email: u.email, name: u.name, superAdmin: !impersonatedBy && u.platformRole === "super_admin", impersonatedBy };
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    superAdmin: !impersonatedBy && !u.passwordSetup && u.platformRole === "super_admin",
+    impersonatedBy,
+    passwordSetup: u.passwordSetup,
+    emailNotifications: u.emailNotifications,
+  };
 }
 
-export async function requireUser(ctx: Ctx, req: FastifyRequest): Promise<AuthUser> {
+/**
+ * The signed-in user, or 401. A session that still has to choose a new password (temporary password, admin
+ * sign-in link) gets 403 PASSWORD_SETUP everywhere except the few routes that pass `allowPasswordSetup`, so
+ * a password someone else has seen is never a working credential beyond that one step.
+ */
+export async function requireUser(ctx: Ctx, req: FastifyRequest, opts: { allowPasswordSetup?: boolean } = {}): Promise<AuthUser> {
   const user = await getUser(ctx, req);
   if (!user) throw new HttpError(401, "UNAUTHORIZED", "Sign in required");
+  if (user.passwordSetup && !opts.allowPasswordSetup) throw new HttpError(403, "PASSWORD_SETUP", "Choose a new password first (Account page).");
   return user;
 }
 

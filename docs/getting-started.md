@@ -44,7 +44,7 @@ In the editor the left panel has **Presets**:
 
 1. Projects → *WordPress sites* → **Download plugin** (`sceneflow-wordpress.zip`) → install and activate it on your site.
 2. In WordPress: Settings → SceneFlow → **Connect with SceneFlow**. Approve once; you are sent back connected.
-3. On the project page choose the site and press **Publish**. Then either paste the shortcode `[sceneflow id="…"]`, add the *SceneFlow Video* block, or use **Place on your site** to drop the player onto any existing element of a page — pick it visually, no page editing.
+3. On the project page choose the site and press **Publish**. Then either paste the shortcode `[sceneflow id="…"]`, add the *SceneFlow Video* block, drag the **SceneFlow Video** element in Elementor or Bricks (pick the video from the list), or use **Place on your site** to drop the player onto any existing element of a page — pick it visually, no page editing.
 4. *Preview on site* in the editor shows the draft inside your theme before you publish.
 5. WooCommerce: product cards pick real products, show live price and stock, and add to the real cart. Without WooCommerce, *My products* (name, price, link) works everywhere.
 
@@ -54,7 +54,7 @@ In the editor the left panel has **Presets**:
 
 ### 5. See how it performs
 
-Project page → **Analytics**: loads, plays, completion, average watch time, clicks, add-to-carts; loads vs plays per day; an **engagement timeline** that shows where viewers drop off (with your scene names along the bottom); a funnel; per-element, per-scene, per-product and per-page tables. Everything is anonymous (no cookies, no IP addresses) and visitors with Do Not Track are never counted. WordPress site owners can switch it off under Settings → SceneFlow → Advanced.
+Project page → **Analytics**: loads, plays, completion, average watch time, clicks, add-to-carts; loads vs plays per day; an **engagement timeline** that shows where viewers drop off (with your scene names along the bottom); a funnel; per-element, per-scene, per-product and per-page tables. Everything is anonymous (no cookies, no IP addresses) and visitors with Do Not Track are never counted. WordPress site owners switch it on or off under Settings → SceneFlow → Advanced. With WooCommerce and analytics on, **Orders** and **Revenue** show the sales from products added in the video (paid orders; refunds are taken off). **Download CSV** gives one row per day for a spreadsheet, **Raw events** every anonymous event. Raw events are kept 13 months by default (`ANALYTICS_RETENTION_DAYS`).
 
 ### 6. No footage? Make a clip with AI
 
@@ -88,9 +88,9 @@ Everything works without any AI account: you get starter text to edit and the co
 
 **Dashboard.** Top bar → **Dashboard**: what needs attention (a site that cannot be reached, a client who has not answered for days, something approved but not published, player errors), mentions of you, every project grouped by client with its live version, review state, site health and 7-day loads / plays / clicks, and a feed of who did what.
 
-### 9. Download as MP4
+### 9. Download as a video file (MP4, WebM, GIF)
 
-Project page → **Download as MP4** (also in the editor's ⋯ menu). Pick what to render (current draft or the published version), quality (1080p or 720p), frame rate and — for portrait videos — which layout (phone by default), then **Render MP4**. The server renders it with the same player your visitors see, so text, motion, captions and voiceover are all in the file; buttons, hotspots and product cards appear as they look at that moment (a video file cannot be clicked). The row shows progress and turns into a **Download** button when the file is ready; it is named after the project (`spring-launch-1080p.mp4`). Rendering takes about as long as the video, often less. Scroll videos export as a normal play-through. Up to 10 minutes per file.
+Project page → **Download as a video file** (also in the editor's ⋯ menu). Pick what to render (current draft or the published version), the file type (**MP4** plays everywhere; **WebM** is smaller for websites and keeps a transparent player background transparent; **GIF** is a silent 15 fps loop up to 30 seconds and 720p), quality (4K up to 3 minutes, 1080p, 720p, 480p), frame rate and — for portrait videos — which layout (phone by default), then **Render**. Videos are rendered from your original upload when the browser can read it (otherwise from the best processed copy). The server renders it with the same player your visitors see, so text, motion, captions and voiceover are all in the file; buttons, hotspots and product cards appear as they look at that moment (a video file cannot be clicked). The row shows progress and turns into a **Download** button when the file is ready; it is named after the project (`spring-launch-1080p.mp4`). Rendering takes about as long as the video, often less. Scroll videos export as a normal play-through. Up to 10 minutes per file.
 
 ### 10. When something does not work
 
@@ -98,11 +98,11 @@ Project page → **Something not working?** runs the whole chain for you: draft,
 
 ### 11. Forgot your password? Your account
 
-On the sign-in page, **Forgot your password?** sends a link to your e-mail (valid 60 minutes, works once); open it, choose a new password, and you are signed in — every other device is signed out. Your e-mail address in the top bar opens **Account**: change your name or your password (the current one is required; other devices are signed out, this one stays). If the server has no e-mail service yet, the forgot page says so: the link is written to the server's log and `data/outbox` folder for the person who runs it to pass on.
+On the sign-in page, **Forgot your password?** sends a link to your e-mail (valid 60 minutes, works once); open it, choose a new password, and you are signed in — every other device is signed out. Your e-mail address in the top bar opens **Account**: change your name or your password (the current one is required; other devices are signed out, this one stays), change your **e-mail address** (confirm it from the new mailbox; the old one gets a notice) and switch the **comment and approval mails** off or on (mentions, replies to your comments, drafts waiting for your approval, your draft approved or sent back). If the server has no e-mail service yet, the forgot page says so: the link is written to the server's log and `data/outbox` folder for the person who runs it to pass on.
 
 ### 12. Running the server: the Admin console
 
-If you run SceneFlow for other people, make your own account a super admin once on the server: `pnpm admin grant you@example.com` (`pnpm admin list` shows who is one). Sign in again and an **Admin** link appears in the top bar: an overview of the whole server, every account (disable a spammer, sign someone out everywhere, make a colleague a super admin), every workspace (members, sites, projects, storage, plan), the **System** tab (is the worker running, are uploads and exports moving, retry a failed job, which mail / AI / storage services are set up) and an audit log of every change. Nobody can disable or demote themselves, and normal accounts never see the console. For support: **Sign in as this user** (an hour, with an orange bar and *Return to admin*; password and profile stay locked), **Send password reset link**, **Download CSV** of accounts, and the **Sites** tab with every connected website, its plugin version and *Check now*.
+If you run SceneFlow for other people, make your own account a super admin once on the server: `pnpm admin grant you@example.com` (`pnpm admin list` shows who is one). Sign in again and an **Admin** link appears in the top bar: an overview of the whole server, every account (disable a spammer, sign someone out everywhere, make a colleague a super admin), every workspace (members, sites, projects, storage, plan), the **System** tab (is the worker running, are uploads and exports moving, retry a failed job, which mail / AI / storage services are set up) and an audit log of every change. Nobody can disable or demote themselves, and normal accounts never see the console. For support: **Sign in as this user** (an hour, with an orange bar and *Return to admin*; password and profile stay locked), **Send password reset link**, and for someone who cannot reach their mailbox **Set temporary password** (shown to you once; their next sign-in must choose a new one) or **Create sign-in link** (works once, 1 hour to 7 days; you send it to them), **Download CSV** of accounts, and the **Sites** tab with every connected website, its plugin version and *Check now*.
 
 ---
 

@@ -39,6 +39,8 @@ final class SceneFlow_Plugin {
 		add_action( 'init', array( $this, 'register_block' ) );
 		add_action( 'rest_api_init', array( new SceneFlow_REST(), 'register_routes' ) );
 		( new SceneFlow_Frontend() )->init();
+		SceneFlow_Orders::init();
+		SceneFlow_Builders::init();
 		if ( is_admin() ) {
 			( new SceneFlow_Admin() )->init();
 		}

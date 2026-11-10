@@ -50,7 +50,7 @@ describe("MP4 exports", () => {
     const ex = created.json().export;
     expect(ex).toMatchObject({ status: "queued", source: "draft", version: 1, requestedByName: "Olivia Owner", fileName: "spring-launch-2026-720p.mp4", fileUrl: null });
     // Portrait canvas → mobile layout, 720×1280.
-    expect(ex.options).toEqual({ quality: "720p", width: 720, height: 1280, fps: 25, device: "mobile" });
+    expect(ex.options).toEqual({ quality: "720p", width: 720, height: 1280, fps: 25, device: "mobile", format: "mp4", transparent: false });
     expect(ex.configJson).toBeUndefined();
     expect(ex.storageKey).toBeUndefined();
     expect(send).toHaveBeenCalledWith("export.render", { exportId: ex.id }, expect.objectContaining({ retryLimit: 0 }));
@@ -111,7 +111,7 @@ describe("MP4 exports", () => {
     await app.inject({ method: "PUT", url: `/api/v1/projects/${project.id}/draft`, cookies: owner.cookies, payload: { config: { scenes: scenes(12) } } });
     const pub = (await app.inject({ method: "POST", url: `/api/v1/projects/${project.id}/exports`, cookies: owner.cookies, payload: { source: "published", device: "tablet" } })).json().export;
     expect(pub).toMatchObject({ source: "published", version: 1, status: "queued" });
-    expect(pub.options).toEqual({ quality: "1080p", width: 1920, height: 1080, fps: 30, device: "tablet" });
+    expect(pub.options).toEqual({ quality: "1080p", width: 1920, height: 1080, fps: 30, device: "tablet", format: "mp4", transparent: false });
     const draft = (await app.inject({ method: "POST", url: `/api/v1/projects/${project.id}/exports`, cookies: owner.cookies, payload: {} })).json().export;
     expect(draft).toMatchObject({ source: "draft", version: 2 });
 
@@ -119,5 +119,16 @@ describe("MP4 exports", () => {
     const tooLong = await app.inject({ method: "POST", url: `/api/v1/projects/${project.id}/exports`, cookies: owner.cookies, payload: {} });
     expect(tooLong.statusCode).toBe(422);
     expect(tooLong.json().error).toBe("EXPORT_TOO_LONG");
+
+    // GIF / 4K limits and the file type in the name.
+    await app.inject({ method: "PUT", url: `/api/v1/projects/${project.id}/draft`, cookies: owner.cookies, payload: { config: { scenes: scenes(40) } } });
+    const bigGif = await app.inject({ method: "POST", url: `/api/v1/projects/${project.id}/exports`, cookies: owner.cookies, payload: { format: "gif", quality: "1080p" } });
+    expect(bigGif.json()).toMatchObject({ error: "EXPORT_LIMIT", message: expect.stringMatching(/720p/) });
+    const longGif = await app.inject({ method: "POST", url: `/api/v1/projects/${project.id}/exports`, cookies: owner.cookies, payload: { format: "gif", quality: "480p" } });
+    expect(longGif.json()).toMatchObject({ error: "EXPORT_LIMIT", message: expect.stringMatching(/30 seconds/) });
+    const webm = await app.inject({ method: "POST", url: `/api/v1/projects/${project.id}/exports`, cookies: owner.cookies, payload: { format: "webm", quality: "2160p" } });
+    expect(webm.statusCode, webm.body).toBe(201);
+    expect(webm.json().export.options).toMatchObject({ format: "webm", quality: "2160p", width: 3840, height: 2160 });
+    expect(webm.json().export.fileName).toMatch(/-2160p\.webm$/);
   });
 });

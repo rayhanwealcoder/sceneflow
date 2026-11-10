@@ -92,6 +92,23 @@ export interface PreviewSessionResult {
   expiresIn: number;
 }
 
+/** One order from GET /sceneflow/v1/orders: only the lines added from a video; no customer data. */
+export interface RemoteOrder {
+  id: string;
+  status: "paid" | "refunded" | "cancelled";
+  currency: string;
+  /** Unix seconds. */
+  paidAt: number;
+  modifiedAt: number;
+  lines: Array<{ id: string; projectId: string; sessionId: string | null; productId: string | null; quantity: number; total: number }>;
+}
+
+export interface RemoteOrdersPage {
+  ok: true;
+  enabled: boolean;
+  orders: RemoteOrder[];
+}
+
 export interface RemoteMedia {
   id: number;
   title: string;
@@ -231,6 +248,14 @@ export class WordPressConnector {
 
   deletePlacement(site: ConnectorSite, id: string): Promise<{ ok: true }> {
     return this.signed(site, "DELETE", `${CONNECTOR_NAMESPACE}/placements/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Shop orders the site credited to SceneFlow videos, modified at or after `after` (unix seconds), oldest
+   * first, at most `limit`. `enabled: false` when the site owner has playback analytics off (nothing is shared).
+   */
+  orders(site: ConnectorSite, after: number, limit = 100): Promise<RemoteOrdersPage> {
+    return this.signed<RemoteOrdersPage>(site, "GET", `${CONNECTOR_NAMESPACE}/orders`, undefined, { after: String(Math.max(0, Math.floor(after))), limit: String(limit) });
   }
 
   /** Unsigned check that a published project is actually served by the site (used by diagnostics). */

@@ -208,25 +208,77 @@ await admin.waitForSelector("[data-testid=sites-table] tr[data-url*='development
 // The stored version dates from pairing; "Check now" asks the plugin again.
 // One retry: on Windows the first lookup of a ".local" host can stall past the connector's 10 s timeout.
 const row = "[data-testid=sites-table] tr[data-url*='development.local']";
+// The version development.local should run: the current release build (pnpm build:wp).
+const pluginVersion = JSON.parse(await readFile(join(ROOT, "dist", "connectors", "manifest.json"), "utf8")).connectors.wordpress.version;
 let fresh = false;
 for (let attempt = 0; attempt < 2 && !fresh; attempt++) {
   await admin.click(`${row} [data-testid=site-check]`);
   fresh = await admin
-    .waitForFunction((sel) => /0[.]7[.]0/.test(document.querySelector(sel)?.textContent ?? ""), row, { timeout: 20000 })
+    .waitForFunction(({ sel, v }) => (document.querySelector(sel)?.textContent ?? "").includes(v), { sel: row, v: pluginVersion }, { timeout: 20000 })
     .then(() => true, () => false);
 }
-if (!fresh) fail("Check now did not refresh development.local to plugin 0.7.0");
+if (!fresh) fail(`Check now did not refresh development.local to plugin ${pluginVersion} (install the current build there)`);
 const siteRows = await admin.$$eval("[data-testid=sites-table] tbody tr[data-url]", (r) => r.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
 note(`sites matching development.local: ${siteRows.length}; e.g. ${siteRows[0].slice(0, 140)}`);
 await admin.click("[data-testid=admin-tab-system]");
 await admin.waitForSelector("text=Failed MP4 exports");
 check("reset link e-mailed to the member (outbox), accounts CSV, Sites tab (Check now refreshes the plugin version), failed exports on System");
 
+// 6c. No mailbox: a temporary password (shown once) and a one-time sign-in link; both force a new password.
+let memberPass = PASS;
+await openUser(admin, userEmail);
+await admin.click("[data-testid=temp-password]");
+await admin.waitForSelector("[data-testid=secret-box]");
+const temp = (await admin.textContent("[data-testid=secret-value]")).trim();
+if (!/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/.test(temp)) fail("temporary password looks wrong: " + temp);
+// The member's open browser is signed out at once.
+await member.goto(`${WEB}/account`);
+await member.waitForURL(/\/login/);
+await signIn(member, userEmail, PASS);
+await member.waitForSelector(".alert.error"); // the old password is gone
+await signIn(member, userEmail, temp);
+await member.waitForURL(/\/account\?setup=1/);
+await member.waitForSelector("[data-testid=password-setup-note]");
+if (await member.$("[data-testid=current-password]")) fail("setup form still asks for the current password");
+// Any other page sends them back until a password is chosen.
+await member.goto(`${WEB}/projects`);
+await member.waitForURL(/\/account\?setup=1/);
+memberPass = "member-own-pass-2";
+await member.fill("[data-testid=new-password]", memberPass);
+await member.click("[data-testid=change-password]");
+await member.waitForURL(`${WEB}/projects`);
+check("temporary password: shown once, member signed out, old password dead, sign-in forces a new password, then back to work");
+
+await openUser(admin, userEmail);
+await admin.selectOption("[data-testid=link-hours]", "1");
+await admin.click("[data-testid=create-login-link]");
+await admin.waitForSelector("[data-testid=secret-box]:has-text('Sign-in link')");
+const link = (await admin.textContent("[data-testid=secret-value]")).trim();
+if (!link.startsWith(`${WEB}/sign-in-link/`)) fail("sign-in link looks wrong: " + link);
+const guestCtx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+const guest = await guestCtx.newPage();
+watch(guest, "link");
+await guest.goto(link);
+await guest.waitForSelector(`[data-testid=link-for]:has-text("${"m\u2022\u2022\u2022@sceneflow.test"}")`);
+await guest.click("[data-testid=link-sign-in]");
+await guest.waitForURL(/\/account\?setup=1/);
+memberPass = "member-own-pass-3";
+await guest.fill("[data-testid=new-password]", memberPass);
+await guest.click("[data-testid=change-password]");
+await guest.waitForURL(`${WEB}/projects`);
+// The link worked once.
+const again = await (await browser.newContext()).newPage();
+await again.goto(link);
+await again.waitForSelector("[data-testid=link-dead]");
+await again.context().close();
+await guestCtx.close();
+check("sign-in link: opens the account once, asks for a new password, a second use is refused");
+
 // 7. Audit log lists what just happened.
 await admin.click("[data-testid=admin-tab-audit]");
 await admin.waitForSelector("[data-testid=audit-table] tbody tr");
 const audit = await admin.textContent("[data-testid=audit-table]");
-for (const want of ["Disabled account", "Enabled account", "Made super admin", "Removed super admin", "Changed plan", "Signed in as", "Returned from signing in as", "Sent password reset link", "Downloaded accounts CSV", "Checked site"]) if (!audit.includes(want)) fail(`audit log misses "${want}"`);
+for (const want of ["Disabled account", "Enabled account", "Made super admin", "Removed super admin", "Changed plan", "Signed in as", "Returned from signing in as", "Sent password reset link", "Downloaded accounts CSV", "Checked site", "Set a temporary password", "Created a sign-in link", "Signed in with an admin's link"]) if (!audit.includes(want)) fail(`audit log misses "${want}"`);
 if (!audit.includes(adminEmail)) fail("audit log does not name the admin");
 check("audit log records every change with the admin's e-mail");
 
@@ -239,4 +291,4 @@ await admin.waitForSelector("[data-testid=admin-denied]");
 check("pnpm admin revoke -> console closed for the test admin");
 
 await browser.close();
-console.log(`\nAll good: ${problems.length} page errors. Accounts kept: ${adminEmail}, ${userEmail} (password ${PASS}).`);
+console.log(`\nAll good: ${problems.length} page errors. Accounts kept: ${adminEmail}, ${userEmail} (admin password ${PASS}, member password ${memberPass}).`);

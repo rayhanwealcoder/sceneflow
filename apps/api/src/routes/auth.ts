@@ -1,6 +1,7 @@
-import { and, eq, gt, ne } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { and, eq, gt, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { adminAudit, passwordChangedMail, passwordResets, sessions, users, workspaceMembers, workspaces } from "@sceneflow/server";
+import { adminAudit, emailChangeConfirmMail, emailChangeNoticeMail, emailChanges, loginLinks, passwordChangedMail, passwordResets, sessions, users, workspaceMembers, workspaces } from "@sceneflow/server";
 import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
 import { cookieOptions, endSession, getUser, hashPassword, hashToken, IMPERSONATOR_COOKIE, requireUser, SESSION_COOKIE, startSession, verifyPassword, type AuthUser } from "../lib/auth.js";
@@ -16,8 +17,13 @@ const loginSchema = z.object({ email, password: z.string().min(1).max(128) });
 const forgotSchema = z.object({ email });
 const TOKEN_RE = /^[0-9a-f]{64}$/;
 const resetSchema = z.object({ token: z.string().regex(TOKEN_RE), password });
-const changePasswordSchema = z.object({ currentPassword: z.string().min(1).max(128), newPassword: password });
-const profileSchema = z.object({ name });
+/** `currentPassword` may be left out only by a session that has to choose a new password (see requireUser). */
+const changePasswordSchema = z.object({ currentPassword: z.string().min(1).max(128).optional(), newPassword: password });
+const profileSchema = z.object({ name: name.optional(), emailNotifications: z.boolean().optional() }).refine((v) => v.name !== undefined || v.emailNotifications !== undefined, "Nothing to change");
+const emailChangeSchema = z.object({ newEmail: email, currentPassword: z.string().min(1).max(128) });
+const tokenSchema = z.object({ token: z.string().regex(TOKEN_RE) });
+/** "Change e-mail address" links live 24 hours. */
+export const EMAIL_CHANGE_TTL_MS = 24 * 60 * 60 * 1000;
 const authLimit = { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } };
 /** Requests are limited harder than sign-in: each one may send a mail. */
 const forgotLimit = { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } };
@@ -48,6 +54,42 @@ async function loadReset(ctx: Ctx, token: string): Promise<ResetRow> {
   if (!row || row.status !== "active") throw invalid();
   if (row.usedAt) throw new HttpError(410, "RESET_USED", "This link was already used. Request a new one if you still need it.");
   if (row.expiresAt.getTime() < Date.now()) throw new HttpError(410, "RESET_EXPIRED", "This link has expired. Request a new one.");
+  return row;
+}
+
+type LinkRow = { id: string; userId: string; expiresAt: Date; usedAt: Date | null; passwordSetup: boolean; email: string; name: string };
+
+/** The admin sign-in link behind a token, or the 404 / 410 the page should show. */
+async function loadLoginLink(ctx: Ctx, token: string): Promise<LinkRow> {
+  const invalid = () => new HttpError(404, "LINK_INVALID", "This sign-in link is not valid. Ask for a new one.");
+  if (!TOKEN_RE.test(token)) throw invalid();
+  const [row] = await ctx.db
+    .select({ id: loginLinks.id, userId: loginLinks.userId, expiresAt: loginLinks.expiresAt, usedAt: loginLinks.usedAt, passwordSetup: loginLinks.passwordSetup, email: users.email, name: users.name, status: users.status })
+    .from(loginLinks)
+    .innerJoin(users, eq(users.id, loginLinks.userId))
+    .where(eq(loginLinks.id, hashToken(token)))
+    .limit(1);
+  if (!row || row.status !== "active") throw invalid();
+  if (row.usedAt) throw new HttpError(410, "LINK_USED", "This sign-in link was already used. Ask for a new one if you still need it.");
+  if (row.expiresAt.getTime() < Date.now()) throw new HttpError(410, "LINK_EXPIRED", "This sign-in link has expired. Ask for a new one.");
+  return row;
+}
+
+type EmailChangeRow = { id: string; userId: string; newEmail: string; expiresAt: Date; usedAt: Date | null; email: string; name: string };
+
+/** The pending e-mail change behind a confirmation link, or the 404 / 410 the page should show. */
+async function loadEmailChange(ctx: Ctx, token: string): Promise<EmailChangeRow> {
+  const invalid = () => new HttpError(404, "LINK_INVALID", "This confirmation link is not valid.");
+  if (!TOKEN_RE.test(token)) throw invalid();
+  const [row] = await ctx.db
+    .select({ id: emailChanges.id, userId: emailChanges.userId, newEmail: emailChanges.newEmail, expiresAt: emailChanges.expiresAt, usedAt: emailChanges.usedAt, email: users.email, name: users.name, status: users.status })
+    .from(emailChanges)
+    .innerJoin(users, eq(users.id, emailChanges.userId))
+    .where(eq(emailChanges.id, hashToken(token)))
+    .limit(1);
+  if (!row || row.status !== "active") throw invalid();
+  if (row.usedAt) throw new HttpError(410, "LINK_USED", "This address was already confirmed.");
+  if (row.expiresAt.getTime() < Date.now()) throw new HttpError(410, "LINK_EXPIRED", "This confirmation link has expired. Ask for the change again on your Account page.");
   return row;
 }
 
@@ -93,8 +135,9 @@ export async function authRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
       throw new HttpError(401, "INVALID_CREDENTIALS", "Email or password is incorrect");
     }
     accountGuard.succeed(accountKey);
-    await startSession(ctx, reply, user.id);
-    return { user: { id: user.id, email: user.email, name: user.name } };
+    // Signed in with a temporary password from a super admin: this session must choose its own password first.
+    await startSession(ctx, reply, user.id, { passwordSetup: user.mustChangePassword });
+    return { user: { id: user.id, email: user.email, name: user.name }, passwordSetup: user.mustChangePassword };
   });
 
   app.post("/api/v1/auth/logout", async (req, reply) => {
@@ -107,13 +150,80 @@ export async function authRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     return { user };
   });
 
-  /** Rename yourself. */
+  /** Rename yourself; switch comment / approval mails on or off. */
   app.patch("/api/v1/auth/me", authLimit, async (req) => {
     const user = await requireUser(ctx, req);
     refuseWhileImpersonating(user);
     const body = parseBody(profileSchema, req.body);
-    await ctx.db.update(users).set({ name: body.name }).where(eq(users.id, user.id));
-    return { user: { ...user, name: body.name } };
+    const set = { ...(body.name !== undefined ? { name: body.name } : {}), ...(body.emailNotifications !== undefined ? { emailNotifications: body.emailNotifications } : {}) };
+    await ctx.db.update(users).set(set).where(eq(users.id, user.id));
+    return { user: { ...user, ...set } };
+  });
+
+  /**
+   * Change the sign-in e-mail address: needs the current password; the NEW address gets a confirmation link
+   * (24 h, single use) and the OLD one a notice. Nothing changes until the link is opened.
+   */
+  app.post("/api/v1/auth/email", forgotLimit, async (req) => {
+    const user = await requireUser(ctx, req);
+    refuseWhileImpersonating(user);
+    const body = parseBody(emailChangeSchema, req.body);
+    const row = await ctx.db.query.users.findFirst({ where: eq(users.id, user.id) });
+    if (!row || !(await verifyPassword(body.currentPassword, row.passwordHash))) throw new HttpError(400, "WRONG_PASSWORD", "Your current password is not correct");
+    if (body.newEmail === row.email) throw new HttpError(400, "SAME_EMAIL", "That is already your e-mail address");
+    const taken = await ctx.db.query.users.findFirst({ where: eq(users.email, body.newEmail), columns: { id: true } });
+    if (taken) throw new HttpError(409, "EMAIL_TAKEN", "Another account already uses this e-mail address");
+    const token = randomBytes(32).toString("hex");
+    await ctx.db.transaction(async (tx) => {
+      await tx.delete(emailChanges).where(and(eq(emailChanges.userId, user.id), isNull(emailChanges.usedAt)));
+      await tx.insert(emailChanges).values({ id: hashToken(token), userId: user.id, newEmail: body.newEmail, expiresAt: new Date(Date.now() + EMAIL_CHANGE_TTL_MS) });
+    });
+    ctx.mailer.sendLater({ to: body.newEmail, ...emailChangeConfirmMail(brand, { name: row.name, newEmail: body.newEmail, link: `${ctx.cfg.webOrigin}/confirm-email/${token}`, hours: EMAIL_CHANGE_TTL_MS / 3600000 }) });
+    ctx.mailer.sendLater({ to: row.email, ...emailChangeNoticeMail(brand, { name: row.name, newEmail: body.newEmail, done: false, resetLink: `${ctx.cfg.webOrigin}/forgot` }) });
+    return { ok: true, delivery: ctx.mailer.delivers ? "email" : "log" };
+  });
+
+  /** What the confirmation page shows: the address that becomes the new one. */
+  app.get<{ Params: { token: string } }>("/api/v1/auth/email/:token", authLimit, async (req) => {
+    const row = await loadEmailChange(ctx, req.params.token);
+    return { newEmail: row.newEmail };
+  });
+
+  /** Confirms the link (a button press): the address changes if nobody took it meanwhile; the old address is told. */
+  app.post("/api/v1/auth/email/confirm", authLimit, async (req) => {
+    const body = parseBody(tokenSchema, req.body);
+    const row = await loadEmailChange(ctx, body.token);
+    const taken = await ctx.db.query.users.findFirst({ where: and(eq(users.email, row.newEmail), ne(users.id, row.userId)), columns: { id: true } });
+    if (taken) throw new HttpError(409, "EMAIL_TAKEN", "Another account started using this address in the meantime.");
+    await ctx.db.transaction(async (tx) => {
+      await tx.update(users).set({ email: row.newEmail }).where(eq(users.id, row.userId));
+      await tx.update(emailChanges).set({ usedAt: new Date() }).where(eq(emailChanges.id, row.id));
+      await tx.delete(emailChanges).where(and(eq(emailChanges.userId, row.userId), isNull(emailChanges.usedAt)));
+    });
+    ctx.mailer.sendLater({ to: row.email, ...emailChangeNoticeMail(brand, { name: row.name, newEmail: row.newEmail, done: true, resetLink: `${ctx.cfg.webOrigin}/forgot` }) });
+    return { ok: true, email: row.newEmail };
+  });
+
+  /** What the sign-in link page shows before the button: whose account (masked) and whether a new password follows. */
+  app.get<{ Params: { token: string } }>("/api/v1/auth/login-link/:token", authLimit, async (req) => {
+    const row = await loadLoginLink(ctx, req.params.token);
+    return { email: maskEmail(row.email), name: row.name, passwordSetup: row.passwordSetup, expiresAt: row.expiresAt };
+  });
+
+  /**
+   * Uses an admin's sign-in link (a button press, so mail scanners that open links do not spend it): one
+   * normal session; with `passwordSetup` that session has to choose a new password first.
+   */
+  app.post("/api/v1/auth/login-link", authLimit, async (req, reply) => {
+    const body = parseBody(tokenSchema, req.body);
+    const row = await loadLoginLink(ctx, body.token);
+    const spent = await ctx.db.update(loginLinks).set({ usedAt: new Date() }).where(and(eq(loginLinks.id, row.id), isNull(loginLinks.usedAt))).returning({ id: loginLinks.id });
+    if (spent.length === 0) throw new HttpError(410, "LINK_USED", "This sign-in link was already used.");
+    accountGuard.succeed(`acct:${row.email}`);
+    reply.clearCookie(IMPERSONATOR_COOKIE, { path: "/" });
+    await startSession(ctx, reply, row.userId, { passwordSetup: row.passwordSetup });
+    await ctx.db.insert(adminAudit).values({ actorId: row.userId, actorEmail: row.email, action: "user.login_link_used", targetType: "user", targetId: row.userId, targetLabel: row.email, ip: req.ip ?? null });
+    return { user: { id: row.userId, email: row.email, name: row.name }, passwordSetup: row.passwordSetup };
   });
 
   /**
@@ -141,7 +251,7 @@ export async function authRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     const row = await loadReset(ctx, body.token);
     const passwordHash = await hashPassword(body.password);
     await ctx.db.transaction(async (tx) => {
-      await tx.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
+      await tx.update(users).set({ passwordHash, mustChangePassword: false }).where(eq(users.id, row.userId));
       await tx.update(passwordResets).set({ usedAt: new Date() }).where(eq(passwordResets.id, row.id));
       await tx.delete(sessions).where(eq(sessions.userId, row.userId));
     });
@@ -152,18 +262,25 @@ export async function authRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     return { user: { id: row.userId, email: row.email, name: row.name } };
   });
 
-  /** Change the password while signed in; every other device is signed out, this one stays. */
+  /**
+   * Change the password while signed in; every other device is signed out, this one stays. A session that
+   * has to choose a new password (temporary password, admin sign-in link) does it here without the current
+   * one, and must pick something other than the temporary password.
+   */
   app.post("/api/v1/auth/password", authLimit, async (req) => {
-    const user = await requireUser(ctx, req);
+    const user = await requireUser(ctx, req, { allowPasswordSetup: true });
     refuseWhileImpersonating(user);
     const body = parseBody(changePasswordSchema, req.body);
     const row = await ctx.db.query.users.findFirst({ where: eq(users.id, user.id) });
-    if (!row || !(await verifyPassword(body.currentPassword, row.passwordHash))) throw new HttpError(400, "WRONG_PASSWORD", "Your current password is not correct");
+    if (!row) throw new HttpError(401, "UNAUTHORIZED", "Sign in required");
+    if (!user.passwordSetup && !(body.currentPassword && (await verifyPassword(body.currentPassword, row.passwordHash)))) throw new HttpError(400, "WRONG_PASSWORD", "Your current password is not correct");
+    if (user.passwordSetup && row.mustChangePassword && (await verifyPassword(body.newPassword, row.passwordHash))) throw new HttpError(400, "SAME_PASSWORD", "Choose a password of your own, not the temporary one");
     const passwordHash = await hashPassword(body.newPassword);
     const current = hashToken(req.cookies[SESSION_COOKIE] ?? "");
     await ctx.db.transaction(async (tx) => {
-      await tx.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+      await tx.update(users).set({ passwordHash, mustChangePassword: false }).where(eq(users.id, user.id));
       await tx.delete(sessions).where(and(eq(sessions.userId, user.id), ne(sessions.id, current)));
+      await tx.update(sessions).set({ passwordSetup: false }).where(eq(sessions.id, current));
     });
     ctx.mailer.sendLater({ to: user.email, ...passwordChangedMail(brand, { name: user.name, resetLink: `${ctx.cfg.webOrigin}/forgot` }) });
     return { ok: true };
@@ -189,7 +306,7 @@ export async function authRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
   });
 
   app.get("/api/v1/workspaces", async (req) => {
-    const user = await requireUser(ctx, req);
+    const user = await requireUser(ctx, req, { allowPasswordSetup: true });
     const rows = await ctx.db
       .select({ id: workspaces.id, name: workspaces.name, type: workspaces.type, planId: workspaces.planId, role: workspaceMembers.role })
       .from(workspaceMembers)

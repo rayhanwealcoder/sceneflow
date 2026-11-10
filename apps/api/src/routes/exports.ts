@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { exportDuration, exportFileName, exportOptionsFor, exportRequestSchema, LocalStorageProvider, MAX_EXPORT_SECONDS, projectDuration, projectVersions, QUEUES, videoExports, type ExportRenderJob } from "@sceneflow/server";
+import { EXPORT_MIME, exportDuration, exportFileName, exportLimitError, exportOptionsFor, exportRequestSchema, LocalStorageProvider, MAX_EXPORT_SECONDS, projectDuration, projectVersions, QUEUES, videoExports, type ExportRenderJob } from "@sceneflow/server";
 import { HttpError, type Ctx } from "../context.js";
 import { requireMember, requireUser } from "../lib/auth.js";
 import { resolvePublishedMedia } from "../lib/media.js";
@@ -51,10 +51,12 @@ export async function exportRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
     const duration = projectDuration(config);
     if (!(duration > 0) || !config.scenes.length) throw new HttpError(422, "EXPORT_EMPTY", "This project has no scenes yet. Add a video or a template in the editor first.");
     if (duration > MAX_EXPORT_SECONDS) throw new HttpError(422, "EXPORT_TOO_LONG", `Exports are limited to ${MAX_EXPORT_SECONDS / 60} minutes; this project is ${Math.round(duration)} seconds long${exportDuration(config) !== duration ? ` (${Math.round(exportDuration(config))} s at its playback speed)` : ""}.`);
+    const limit = exportLimitError(body, exportDuration(config));
+    if (limit) throw new HttpError(422, "EXPORT_LIMIT", limit);
     const options = exportOptionsFor(config, body);
     const [row] = await ctx.db
       .insert(videoExports)
-      .values({ workspaceId: project.workspaceId, projectId: project.id, requestedBy: user.id, requestedByName: user.name, source: body.source, version: version.version, checksum: version.checksum, configJson: config, optionsJson: options, fileName: exportFileName(project.name, options.quality) })
+      .values({ workspaceId: project.workspaceId, projectId: project.id, requestedBy: user.id, requestedByName: user.name, source: body.source, version: version.version, checksum: version.checksum, configJson: config, optionsJson: options, fileName: exportFileName(project.name, options.quality, options.format) })
       .returning();
     const job: ExportRenderJob = { exportId: row!.id };
     await ctx.queue.send(QUEUES.exportRender, job, { retryLimit: 0, expireInSeconds: 60 * 60 });
@@ -88,12 +90,13 @@ export async function exportRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) 
     const user = await requireUser(ctx, req);
     const row = await loadExport(user.id, req.params.id);
     if (row.status !== "ready" || !row.storageKey) throw new HttpError(409, "EXPORT_NOT_READY", row.status === "failed" ? "This export failed; render it again." : "This export is still rendering.");
-    const fileName = row.fileName ?? exportFileName("video", row.optionsJson.quality);
+    const format = row.optionsJson.format ?? "mp4";
+    const fileName = row.fileName ?? exportFileName("video", row.optionsJson.quality, format);
     if (!local) return reply.redirect(ctx.storage.publicUrl(row.storageKey), 302);
     const path = local.publicPathForUrl(local.publicUrl(row.storageKey));
     const st = path ? await stat(path).catch(() => null) : null;
     if (!path || !st?.isFile()) throw new HttpError(410, "EXPORT_FILE_MISSING", "The file is no longer in storage; render it again.");
-    reply.header("content-type", "video/mp4");
+    reply.header("content-type", EXPORT_MIME[format]);
     reply.header("content-length", String(st.size));
     reply.header("content-disposition", `attachment; filename="${fileName}"`);
     reply.header("accept-ranges", "none");

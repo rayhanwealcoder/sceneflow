@@ -43,6 +43,10 @@ export interface User {
   superAdmin?: boolean;
   /** Set while a super admin is signed in as this user ("Sign in as"). */
   impersonatedBy?: { id: string; email: string; name: string } | null;
+  /** Signed in with a temporary password or an admin's sign-in link: choose a new password before anything else. */
+  passwordSetup?: boolean;
+  /** Comment / approval mails on or off (Account page). */
+  emailNotifications?: boolean;
 }
 
 export interface Workspace {
@@ -152,7 +156,8 @@ export type ActivityType = "review_requested" | "client_review_requested" | "app
 /* ---------- MP4 export ---------- */
 
 export type ExportStatus = "queued" | "rendering" | "ready" | "failed";
-export type ExportQuality = "1080p" | "720p";
+export type ExportQuality = "2160p" | "1080p" | "720p" | "480p";
+export type ExportFormat = "mp4" | "webm" | "gif";
 export type ExportDevice = "desktop" | "tablet" | "mobile";
 
 export interface ExportOptions {
@@ -161,6 +166,10 @@ export interface ExportOptions {
   height: number;
   fps: number;
   device: ExportDevice;
+  /** Older exports have none: MP4. */
+  format?: ExportFormat;
+  /** WebM of a transparent canvas, with an alpha channel. */
+  transparent?: boolean;
 }
 
 /** `GET /api/v1/projects/:id/exports` — one rendered (or rendering) MP4. */
@@ -191,6 +200,7 @@ export interface VideoExport {
 export interface ExportRequest {
   source: "draft" | "published";
   quality: ExportQuality;
+  format: ExportFormat;
   fps: 24 | 25 | 30 | 60;
   device: "auto" | ExportDevice;
 }
@@ -364,12 +374,16 @@ export interface AnalyticsSummary {
     checkouts: number;
     coupons: number;
     errors: number;
+    /** Paid orders with a product added from this video (shop plugin 0.8.0+, analytics on). */
+    orders?: number;
+    revenue?: Array<{ currency: string; orders: number; items: number; revenue: number }>;
+    conversionRate?: number | null;
   };
-  daily: Array<{ day: string; loads: number; plays: number; completes: number; clicks: number }>;
+  daily: Array<{ day: string; loads: number; plays: number; completes: number; clicks: number; orders?: number }>;
   timeline: { buckets: number; duration: number; values: number[] };
   scenes: Array<{ sceneId: string; name: string; start: number; end: number; enters: number; sessions: number }>;
   elements: Array<{ layerId: string; name: string; type: string; impressions: number; clicks: number; ctr: number | null }>;
-  products: Array<{ productId: string; title: string; views: number; addToCarts: number; checkouts: number }>;
+  products: Array<{ productId: string; title: string; views: number; addToCarts: number; checkouts: number; orders?: number; units?: number; revenue?: number }>;
   devices: { desktop: number; tablet: number; mobile: number };
   pages: Array<{ host: string; path: string; loads: number }>;
 }

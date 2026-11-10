@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "./api";
 import type { User, Workspace } from "./types";
@@ -64,6 +65,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setWorkspaces([]);
     if (userId) void refreshWorkspaces();
   }, [userId, refreshWorkspaces]);
+
+  // Temporary password / admin sign-in link: the account page (new password) is the only place to go until a
+  // password of the user's own is set. The API refuses everything else meanwhile (403 PASSWORD_SETUP).
+  const router = useRouter();
+  const pathname = usePathname();
+  const mustSetPassword = Boolean(user?.passwordSetup);
+  useEffect(() => {
+    if (mustSetPassword && pathname !== "/account") router.replace("/account?setup=1");
+  }, [mustSetPassword, pathname, router]);
 
   const selectWorkspace = useCallback((id: string) => {
     setChosen(id);

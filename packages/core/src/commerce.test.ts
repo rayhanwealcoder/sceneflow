@@ -137,6 +137,21 @@ describe("product card", () => {
     expect(open).toHaveBeenCalledWith(ref.url, "_blank", "noopener");
   });
 
+  it("with playback analytics on, the cart line names the video and session (revenue attribution); without it, nothing", async () => {
+    const woo = fakeAdapter();
+    commerce.register(woo);
+    const fetchStub = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+    const p = new Player({ target: "#p", config, lazy: false, analytics: { endpoint: "https://api.test/api/v1/analytics/events", sessionId: "sess-abcdef12" } });
+    await p.init();
+    const added = vi.fn();
+    p.on("addToCart", added);
+    (document.querySelector("#p [data-sceneflow-layer=card] .sceneflow-product-btn") as HTMLButtonElement).click();
+    await waitFor(() => expect(added).toHaveBeenCalled());
+    expect((woo.calls[0] as { source?: unknown }).source).toEqual({ projectId: config.projectId, sessionId: "sess-abcdef12" });
+    p.destroy();
+    fetchStub.mockRestore();
+  });
+
   it("buy now falls back to addToCart + checkoutUrl, coupons go through the adapter", async () => {
     const woo = fakeAdapter();
     (woo.addToCart as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, checkoutUrl: "https://shop.test/checkout/" });

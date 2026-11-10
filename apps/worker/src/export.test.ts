@@ -108,6 +108,8 @@ describe.skipIf(!chromeAvailable)("renderExport", () => {
     expect(result.frames).toBe(48);
     expect(result.pageErrors).toEqual([]);
     expect(result.slowFrames).toBe(0);
+    // The 640×360 H.264 upload fits a 720p frame: the render plays the original, not a re-encoded rendition.
+    expect(result.fromOriginal).toBe(1);
 
     const saved = await conn.db.query.videoExports.findFirst({ where: eq(videoExports.id, row!.id) });
     expect(saved?.status).toBe("ready");
@@ -142,6 +144,70 @@ describe.skipIf(!chromeAvailable)("renderExport", () => {
     const feed = await conn.db.select().from(projectActivity).where(eq(projectActivity.projectId, projectId));
     expect(feed.map((a) => [a.type, a.detail])).toEqual([["exported", "v1 720p"]]);
   }, 180_000);
+
+  it("WebM keeps a transparent canvas see-through (VP9 with alpha) and is silent without audio sources", async () => {
+    const parsed = parseProject({
+      schemaVersion: "1.0",
+      projectId,
+      version: 1,
+      canvas: { aspectRatio: "16:9", background: "transparent" },
+      playback: { mode: "autoplay", muted: true, controls: false },
+      scenes: [{ id: "a", name: "Overlay", start: 0, end: 1, background: { type: "color", color: "transparent" }, layers: [{ id: "box", type: "shape", frame: { x: 40, y: 40, w: 20, h: 20 }, content: {}, style: { background: "#00ff00" } }] }],
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    const [row] = await conn.db
+      .insert(videoExports)
+      .values({ workspaceId, projectId, requestedByName: "Exporter", version: 1, checksum: "c", configJson: parsed.project, optionsJson: { quality: "480p", width: 854, height: 480, fps: 10, device: "desktop", format: "webm", transparent: true }, fileName: "overlay-480p.webm" })
+      .returning();
+    const result = await renderExport({ db: conn.db, storage, publicUrl: "http://localhost:4000" }, row!.id);
+    expect(result.format).toBe("webm");
+    expect(result.frames).toBe(10);
+    const saved = await conn.db.query.videoExports.findFirst({ where: eq(videoExports.id, row!.id) });
+    expect(saved?.storageKey).toBe(`${workspaceId}/exports/${row!.id}.webm`);
+    const file = join(rootDir, "public", saved!.storageKey!);
+    const probe = await ffprobe(file);
+    expect(probe.codec).toBe("vp9");
+    expect(probe.hasAudio).toBe(false);
+    // Decode with libvpx to read the alpha plane: corner transparent, the green box opaque.
+    const { stdout } = await exec(FFMPEG, ["-hide_banner", "-loglevel", "error", "-c:v", "libvpx-vp9", "-i", file, "-frames:v", "1", "-vf", "scale=160:90", "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { encoding: "buffer", maxBuffer: 1 << 20 });
+    const px = stdout as unknown as Buffer;
+    const at = (x: number, y: number) => px.subarray((y * 160 + x) * 4, (y * 160 + x) * 4 + 4);
+    expect(at(2, 2)[3]).toBeLessThan(10);
+    const centre = at(80, 45);
+    expect(centre[3]).toBeGreaterThan(245);
+    expect(centre[1]).toBeGreaterThan(200);
+    expect(centre[0]).toBeLessThan(60);
+  }, 120_000);
+
+  it("GIF: a looping palette GIF at 15 fps, no audio", async () => {
+    const parsed = parseProject({
+      schemaVersion: "1.0",
+      projectId,
+      version: 1,
+      canvas: { aspectRatio: "16:9" },
+      scenes: [
+        { id: "r", name: "Red", start: 0, end: 1, background: { type: "color", color: "#ff0000" } },
+        { id: "b", name: "Blue", start: 1, end: 2, background: { type: "color", color: "#0000ff" } },
+      ],
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    const [row] = await conn.db
+      .insert(videoExports)
+      .values({ workspaceId, projectId, requestedByName: "Exporter", version: 1, checksum: "c", configJson: parsed.project, optionsJson: { quality: "480p", width: 854, height: 480, fps: 15, device: "desktop", format: "gif" }, fileName: "loop-480p.gif" })
+      .returning();
+    const result = await renderExport({ db: conn.db, storage, publicUrl: "http://localhost:4000" }, row!.id);
+    expect(result.format).toBe("gif");
+    expect(result.frames).toBe(30);
+    const saved = await conn.db.query.videoExports.findFirst({ where: eq(videoExports.id, row!.id) });
+    expect(saved?.storageKey).toBe(`${workspaceId}/exports/${row!.id}.gif`);
+    const file = join(rootDir, "public", saved!.storageKey!);
+    const probe = await ffprobe(file);
+    expect(probe.codec).toBe("gif");
+    expect([probe.width, probe.height]).toEqual([854, 480]);
+    expect(probe.hasAudio).toBe(false);
+    expect((await frameStats(file, 0.4)).r).toBeGreaterThan(170);
+    expect((await frameStats(file, 1.5)).b).toBeGreaterThan(170);
+  }, 120_000);
 
   it("fails readably when the project has nothing to render", async () => {
     const parsed = parseProject({ schemaVersion: "1.0", projectId, version: 1, scenes: [] });

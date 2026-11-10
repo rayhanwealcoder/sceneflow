@@ -92,3 +92,63 @@ export function exportReadyMail(brand: MailBrand, p: { name: string; projectName
   });
   return { subject, text, html };
 }
+
+/** "Confirm your new e-mail address": goes to the NEW address; the change happens only when it is opened. */
+export function emailChangeConfirmMail(brand: MailBrand, p: { name: string; newEmail: string; link: string; hours: number }): MailContent {
+  const product = brand.product ?? "SceneFlow";
+  const subject = `Confirm your new ${product} e-mail address`;
+  const text = [greet(p.name), "", `Confirm that ${p.newEmail} should be the e-mail address of your ${product} account:`, "", p.link, "", `The link works for ${p.hours} hours and only once. If you did not ask for this, ignore this e-mail; nothing changes.`].join("\n");
+  const html = layout(brand, {
+    title: "Confirm your new e-mail address",
+    paragraphs: [esc(greet(p.name)), `Confirm that <strong>${esc(p.newEmail)}</strong> should be the e-mail address of your ${esc(product)} account.`],
+    button: { href: p.link, label: "Confirm this address" },
+    small: `The link works for ${p.hours} hours and only once. If you did not ask for this, ignore this e-mail — nothing changes.`,
+  });
+  return { subject, text, html };
+}
+
+/** Goes to the OLD address: when a change is requested and when it is done, so a hijack does not go unnoticed. */
+export function emailChangeNoticeMail(brand: MailBrand, p: { name: string; newEmail: string; done: boolean; resetLink: string }): MailContent {
+  const product = brand.product ?? "SceneFlow";
+  const subject = p.done ? `Your ${product} e-mail address was changed` : `Your ${product} e-mail address is about to change`;
+  const line = p.done
+    ? `Your ${product} account now signs in with ${p.newEmail}. Mails will go there from now on.`
+    : `Someone signed in to your ${product} account asked to change its e-mail address to ${p.newEmail}. It changes when that address confirms.`;
+  const text = [greet(p.name), "", line, "", `If this was not you, reset your password right away: ${p.resetLink}`].join("\n");
+  const html = layout(brand, {
+    title: p.done ? "Your e-mail address was changed" : "Your e-mail address is about to change",
+    paragraphs: [esc(greet(p.name)), esc(line), "If this was not you, reset your password right away."],
+    button: { href: p.resetLink, label: "Reset my password" },
+  });
+  return { subject, text, html };
+}
+
+/** Someone @mentioned you in a comment, or replied in a thread you started. */
+export function commentMail(brand: MailBrand, p: { name: string; author: string; projectName: string; body: string; link: string; reason: "mention" | "reply" }): MailContent {
+  const subject = p.reason === "mention" ? `${p.author} mentioned you in "${p.projectName}"` : `${p.author} replied to your comment on "${p.projectName}"`;
+  const quote = p.body.length > 400 ? `${p.body.slice(0, 400)}…` : p.body;
+  const text = [greet(p.name), "", `${subject}:`, "", quote, "", `Open the project: ${p.link}`, "", "You can turn these mails off on your Account page."].join("\n");
+  const html = layout(brand, {
+    title: p.reason === "mention" ? "You were mentioned" : "New reply to your comment",
+    paragraphs: [esc(greet(p.name)), `<strong>${esc(p.author)}</strong> ${p.reason === "mention" ? "mentioned you" : "replied to your comment"} on <strong>${esc(p.projectName)}</strong>:`, `<span style="display:block;border-left:3px solid #d2d2d7;padding-left:12px;color:#424245;white-space:pre-wrap">${esc(quote)}</span>`],
+    button: { href: p.link, label: "Open the project" },
+    small: "You can turn these mails off on your Account page.",
+  });
+  return { subject, text, html };
+}
+
+/** Approval workflow: a draft waits for your approval, or your draft was approved / sent back. */
+export function approvalMail(brand: MailBrand, p: { name: string; actor: string; projectName: string; link: string; kind: "requested" | "approved" | "changes_requested"; note?: string | null }): MailContent {
+  const what = { requested: `${p.actor} asks you to approve "${p.projectName}"`, approved: `${p.actor} approved "${p.projectName}"`, changes_requested: `${p.actor} asked for changes on "${p.projectName}"` }[p.kind];
+  const title = { requested: "Approval requested", approved: "Draft approved", changes_requested: "Changes requested" }[p.kind];
+  const next = { requested: "Review the draft and approve it or ask for changes.", approved: "It can be published now.", changes_requested: "See the comments on the project for what to change." }[p.kind];
+  const note = p.note?.trim() ? (p.note.length > 400 ? `${p.note.slice(0, 400)}…` : p.note) : null;
+  const text = [greet(p.name), "", `${what}.`, ...(note ? ["", note] : []), "", next, "", p.link, "", "You can turn these mails off on your Account page."].join("\n");
+  const html = layout(brand, {
+    title,
+    paragraphs: [esc(greet(p.name)), `${esc(what)}.`, ...(note ? [`<span style="display:block;border-left:3px solid #d2d2d7;padding-left:12px;color:#424245;white-space:pre-wrap">${esc(note)}</span>`] : []), esc(next)],
+    button: { href: p.link, label: "Open the project" },
+    small: "You can turn these mails off on your Account page.",
+  });
+  return { subject: what, text, html };
+}

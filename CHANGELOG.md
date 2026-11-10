@@ -1,5 +1,37 @@
 # Changelog
 
+## Phase 16 — admin password help, account e-mail, comment / approval mails, Elementor + Bricks, sales from a video, analytics CSV + retention, WebM / GIF / 4K exports (plugin 0.8.0, runtime 0.8.0) (2026-11-10)
+
+### Super admin: people who cannot get in
+- **Set temporary password** (Users → account): the server picks a readable password (`k7mq-4xrt-p9zh`, ~59 bits), shows it to the admin once, signs the account out everywhere and sets `users.must_change_password`. Signing in with it opens a *password-setup* session (`sessions.password_setup`): the API answers `403 PASSWORD_SETUP` everywhere except the password route and the workspace list, and the app only shows "Choose your own password" (no current password asked; the temporary one is refused as the new one). The user gets the usual "password changed" mail.
+- **Create sign-in link**: one-time link (1 h / 1 day / 3 days / 7 days, sha256-hashed in `login_links`, a new one retires older unused ones) that the admin hands over by chat or phone. Opening `/sign-in-link/:token` spends nothing; the **Sign in** button does (link previews cannot use it up). By default the session must choose a new password first. Both actions and every use are in the audit log; neither works on yourself, other super admins or disabled accounts.
+
+### Account
+- **Change e-mail address** (Account page): current password required; the new address gets a confirmation link (24 h, single use, `email_changes`), the old one a notice; nothing changes until `/confirm-email/:token` is confirmed (another notice to the old address then).
+- **Comment and approval mails** (`lib/notify.ts`): @mentions and replies to your comment; "asks you to approve" to the workspace's admins / owner; "approved" / "changes requested" to whoever sent the draft for review (`projects.review_requested_by`; client decisions on the review link too). Never about your own action; switch under Account → *E-mail notifications* (`users.email_notifications`); password and security mails always arrive.
+
+### WordPress plugin 0.8.0
+- **Elementor widget and Bricks element "SceneFlow Video"** (`includes/class-sceneflow-builders.php`, `includes/builders/*`): choose a published video from a list, optional maximum width; they render through `SceneFlow_Frontend::render_player()` (same markup as shortcode / block, through `wp_kses`) and mount in the builder previews (Elementor `element_ready` hook, Bricks `sceneflowBricksInit`). Divi, Breakdance and others keep the shortcode.
+- **Sales from a video** (`includes/class-sceneflow-orders.php`): with playback analytics on, the player's Store API add-to-cart carries `X-SceneFlow-Source: <project>:<session>`; the plugin keeps it in the WooCommerce session, copies it onto the order line at checkout (hidden meta, classic and block checkout) and marks the order. Signed `GET /sceneflow/v1/orders?after=&limit=` returns those orders (status, currency, dates, credited lines after refunds; no customer data); capability `orders`. Readme "External services" and the suggested privacy text describe it.
+- **Fixed: cart in a side session.** The WooCommerce adapter sent the Store API `Cart-Token`, which moves the cart into a token session meant for headless shops: products added from a video did not show on the site's own cart / checkout pages. Same-origin requests now use the cookie session only.
+- **Fixed:** "Place on your site" listed same-title pages oldest first and could cut the newest off after 30.
+
+### Analytics
+- **Orders and revenue per video** (`shop_orders`, `lib/orders.ts`): when a project's Analytics page opens, the API pulls new / changed orders from every WooCommerce site of the workspace (signed request, at most once a minute per site, cursor = the shop's modified time, waits at most 4 s). Totals: paid orders, revenue per currency, orders per 100 plays; per-product orders / units / revenue; orders per day. Refunds and cancellations update the rows.
+- **CSV**: *Download CSV* (one row per day: loads, viewers, plays, completions, clicks, add-to-cart, checkouts, orders, revenue, currency) and *Raw events* (up to 100 000 anonymous events); formula-safe cells. Range adds *Last year*.
+- **Retention**: raw events older than `ANALYTICS_RETENTION_DAYS` (default 395 = 13 months, `0` = forever) are deleted in batches a minute after start and every 6 hours; orders are kept. Admin → System shows the setting and the table size.
+
+### Export
+- **WebM** (VP9 + Opus): smaller files for websites; a project with a transparent canvas renders with an alpha channel (PNG frames on a transparent page → `yuva420p`), so it can sit on top of a page.
+- **GIF**: silent loop at 15 fps, up to 30 s and 720p, palette made for the clip (`palettegen` / `paletteuse`).
+- **4K** (up to 3 minutes) and **480p**.
+- **Rendered from the original upload** when Chrome can decode it (H.264 / VP8 / VP9 / AV1) and it is at most twice the frame size; otherwise from the best rendition (doc 11.2).
+- The project-page card is *Download as a video file*; the editor menu says *Download as video…*.
+
+### Tests
+- API `support.test.ts` (temporary password, sign-in link, e-mail change, comment / approval mails), `revenue.test.ts` (order pull, refunds, CSV, retention); worker WebM-with-alpha and GIF renders; plan tests for formats / limits / originals; core cart-line attribution; PHP tests for the source header.
+- E2E: `admin.mjs` (13 steps, now with temporary password and sign-in link), `account.mjs` (14, e-mail change + mail switch), `export.mjs` (MP4 + WebM + GIF through the UI), `pages.mjs` (new pages), new `wp-sales.mjs` (Elementor widget → add to cart → checkout → order credited → Analytics + CSV → Elementor editor preview) and `wp-bricks.mjs` (Bricks element on the front end and in the builder canvas, on bricks-try.local).
+
 ## Phase 15 — WordPress.org readiness (plugin 0.7.0, runtime 0.7.0) + super admin support tools (2026-11-10)
 
 ### WordPress plugin 0.7.0 — audited against the Plugin Directory guidelines

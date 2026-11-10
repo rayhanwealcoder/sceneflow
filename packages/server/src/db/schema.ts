@@ -18,6 +18,10 @@ export const users = pgTable("users", {
   /** Platform-wide role. `super_admin` opens /admin; granted only by the CLI (`pnpm admin grant`) or another super admin. */
   platformRole: text("platform_role", { enum: PLATFORM_ROLES }).notNull().default("user"),
   lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
+  /** Set by a super admin's "Set temporary password": the next sign-in has to choose a new password. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
+  /** Mails about comments that mention you and approval requests / decisions (account page switch). */
+  emailNotifications: boolean("email_notifications").notNull().default(true),
   createdAt: createdAt(),
 });
 
@@ -28,6 +32,11 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   /** Set when a super admin signed in as this user ("Sign in as", 1 hour, audited). */
   impersonatorId: uuid("impersonator_id").references((): AnyPgColumn => users.id, { onDelete: "cascade" }),
+  /**
+   * This session may set a new password without the current one: opened with a temporary password or with an
+   * admin's sign-in link that asks for a new password. Cleared when the password is set.
+   */
+  passwordSetup: boolean("password_setup").notNull().default(false),
   createdAt: createdAt(),
 });
 
@@ -42,6 +51,39 @@ export const passwordResets = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("password_resets_user_idx").on(t.userId)],
+);
+
+/**
+ * Sign-in links a super admin created for a user who cannot get in ("Create sign-in link"): sha256 of the token
+ * as id, single use, 1 hour to 7 days. Creating a new one retires the user's earlier unused links.
+ */
+export const loginLinks = pgTable(
+  "login_links",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+    /** The session it opens must choose a new password before anything else. */
+    passwordSetup: boolean("password_setup").notNull().default(true),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("login_links_user_idx").on(t.userId)],
+);
+
+/** "Change e-mail address": the new address confirms with a link (sha256 id, 24 hours, single use). */
+export const emailChanges = pgTable(
+  "email_changes",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    newEmail: text("new_email").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("email_changes_user_idx").on(t.userId)],
 );
 
 export const ADMIN_TARGETS = ["user", "workspace", "job", "site", "system"] as const;
@@ -114,6 +156,9 @@ export const sites = pgTable("sites", {
   capabilitiesJson: jsonb("capabilities_json").$type<string[]>().notNull().default([]),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   lastError: text("last_error"),
+  /** Shop orders credited to videos (Phase 16): last pull, and the shop's "modified" time it reached (unix seconds). */
+  ordersSyncedAt: timestamp("orders_synced_at", { withTimezone: true }),
+  ordersCursor: bigint("orders_cursor", { mode: "number" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -159,6 +204,8 @@ export const projects = pgTable("projects", {
   approvedChecksum: text("approved_checksum"),
   approvedBy: text("approved_by"),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
+  /** Who last sent the draft for review: gets the "approved" / "changes requested" mail. */
+  reviewRequestedBy: uuid("review_requested_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   /** Client review link: sha256 of the token for lookup, the token encrypted so the link can be shown again. */
   reviewTokenHash: text("review_token_hash"),
   reviewTokenEncrypted: text("review_token_encrypted"),
@@ -383,6 +430,34 @@ export const analyticsEvents = pgTable(
   (t) => [index("analytics_events_project_time_idx").on(t.projectId, t.occurredAt), index("analytics_events_project_type_idx").on(t.projectId, t.type, t.occurredAt)],
 );
 
+export const SHOP_ORDER_STATUSES = ["paid", "refunded", "cancelled"] as const;
+
+/**
+ * Order lines a shop credited to a video (doc 24.2 revenue attribution): the visitor added the product from a
+ * player while playback analytics ran. Pulled from the site's plugin (signed GET /sceneflow/v1/orders), one row
+ * per order line, upserted on every pull so refunds and cancellations update the numbers. No customer data.
+ */
+export const shopOrders = pgTable(
+  "shop_orders",
+  {
+    siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    /** The shop's own ids (WooCommerce order and order item). */
+    orderId: text("order_id").notNull(),
+    lineId: text("line_id").notNull(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    sessionId: text("session_id"),
+    productId: text("product_id"),
+    quantity: integer("quantity").notNull().default(1),
+    /** Line total after discounts and refunds, without tax, in `currency`. */
+    revenue: doublePrecision("revenue").notNull().default(0),
+    currency: text("currency").notNull(),
+    status: text("status", { enum: SHOP_ORDER_STATUSES }).notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.siteId, t.lineId] }), index("shop_orders_project_paid_idx").on(t.projectId, t.paidAt)],
+);
+
 export const EXPORT_STATUSES = ["queued", "rendering", "ready", "failed"] as const;
 export type ExportStatus = (typeof EXPORT_STATUSES)[number];
 export const EXPORT_SOURCES = ["draft", "published"] as const;
@@ -390,12 +465,16 @@ export type ExportSource = (typeof EXPORT_SOURCES)[number];
 
 /** Frozen render settings of one export (what the worker renders; shown in the UI). */
 export interface ExportOptions {
-  quality: "1080p" | "720p";
+  quality: "2160p" | "1080p" | "720p" | "480p";
   width: number;
   height: number;
   fps: number;
   /** Responsive layout the layers are rendered with. */
   device: "desktop" | "tablet" | "mobile";
+  /** File type; older rows have none and are MP4. */
+  format?: "mp4" | "webm" | "gif";
+  /** WebM of a transparent canvas: rendered with an alpha channel. */
+  transparent?: boolean;
 }
 
 /**

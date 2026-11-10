@@ -14,6 +14,7 @@ define( 'SCENEFLOW_TESTING', true );
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 require __DIR__ . '/../includes/class-sceneflow-signature.php';
 require __DIR__ . '/../includes/class-sceneflow-config.php';
+require __DIR__ . '/../includes/class-sceneflow-orders.php';
 
 $passed = 0;
 /**
@@ -84,5 +85,17 @@ sf_assert( SceneFlow_Config::is_valid_id( 'abc-123_X' ) && ! SceneFlow_Config::i
 sf_assert( SceneFlow_Config::is_valid_selector( '#hero > .wp-block-cover' ) && ! SceneFlow_Config::is_valid_selector( '<img onerror=x>' ) && ! SceneFlow_Config::is_valid_selector( '' ), 'selector validation' );
 sf_assert( SceneFlow_Config::is_valid_css_length( '720px' ) && SceneFlow_Config::is_valid_css_length( '100%' ) && SceneFlow_Config::is_valid_css_length( '37.5rem' ), 'css length accepted' );
 sf_assert( ! SceneFlow_Config::is_valid_css_length( '720px;background:url(x)' ) && ! SceneFlow_Config::is_valid_css_length( 'expression(1)' ) && ! SceneFlow_Config::is_valid_css_length( '' ) && ! SceneFlow_Config::is_valid_css_length( 12 ), 'css injection rejected' );
+
+// --- order attribution (X-SceneFlow-Source header) ---
+$src = SceneFlow_Orders::parse_source( '3C8DAB11-3DA6-4434-8C66-493E27B46C45:Sess_AbC-123' );
+sf_assert( is_array( $src ) && '3c8dab11-3da6-4434-8c66-493e27b46c45' === $src['project'] && 'Sess_AbC-123' === $src['session'], 'source: uuid lowercased, session kept as sent' );
+$src = SceneFlow_Orders::parse_source( '3c8dab11-3da6-4434-8c66-493e27b46c45:' );
+sf_assert( is_array( $src ) && '' === $src['session'], 'source without a session id' );
+sf_assert( null === SceneFlow_Orders::parse_source( 'not-a-uuid:sess-12345678' ), 'source: bad project id rejected' );
+sf_assert( null === SceneFlow_Orders::parse_source( '3c8dab11-3da6-4434-8c66-493e27b46c45:bad session' ), 'source: bad session id rejected' );
+sf_assert( null === SceneFlow_Orders::parse_source( '3c8dab11-3da6-4434-8c66-493e27b46c45' ), 'source: missing separator rejected' );
+sf_assert( null === SceneFlow_Orders::parse_source( array( 'x' ) ) && null === SceneFlow_Orders::parse_source( str_repeat( 'a', 200 ) ), 'source: wrong type / too long rejected' );
+sf_assert( 'paid' === SceneFlow_Orders::map_status( 'processing' ) && 'paid' === SceneFlow_Orders::map_status( 'completed' ) && 'refunded' === SceneFlow_Orders::map_status( 'refunded' ) && 'cancelled' === SceneFlow_Orders::map_status( 'failed' ), 'order statuses mapped' );
+sf_assert( null === SceneFlow_Orders::map_status( 'pending' ) && null === SceneFlow_Orders::map_status( 'on-hold' ), 'unpaid orders are not reported' );
 
 echo "OK: {$passed} assertions passed\n";

@@ -156,6 +156,7 @@ class SceneFlow_REST {
 		);
 		if ( SceneFlow_WooCommerce::is_active() ) {
 			SceneFlow_WooCommerce::register_routes( $this );
+			SceneFlow_Orders::register_routes( $this );
 		}
 	}
 
@@ -253,6 +254,7 @@ class SceneFlow_REST {
 		$caps = array( 'publish', 'preview', 'placements', 'media', 'shortcode', 'block' );
 		if ( SceneFlow_WooCommerce::is_active() ) {
 			$caps[] = 'woocommerce';
+			$caps[] = 'orders';
 		}
 		return $caps;
 	}
@@ -495,8 +497,11 @@ class SceneFlow_REST {
 				'post_status'         => 'publish',
 				's'                   => $search,
 				'posts_per_page'      => 30,
-				'orderby'             => 'title',
-				'order'               => 'ASC',
+				// Alphabetical; among pages with the same title the newest first, so the one just made is never cut off.
+				'orderby'             => array(
+					'title' => 'ASC',
+					'date'  => 'DESC',
+				),
 				'ignore_sticky_posts' => true,
 			)
 		);

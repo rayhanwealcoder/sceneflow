@@ -4,10 +4,10 @@ import { mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { chromium, type Browser, type Route } from "playwright-core";
 import type { Device, Project } from "@sceneflow/schema";
-import { audioFilterGraph, audioPlan, exportConfig, exportFileName, exportSpeed, LocalStorageProvider, MAX_EXPORT_SECONDS, mediaAssets, projectActivity, projectDuration, videoExports, type AudioCue, type Db, type StorageProvider } from "@sceneflow/server";
+import { audioFilterGraph, audioPlan, EXPORT_MIME, exportConfig, exportFileName, exportSpeed, LocalStorageProvider, MAX_EXPORT_SECONDS, mediaAssets, projectActivity, projectDuration, useOriginalSource, videoAssetIds, videoExports, type AudioCue, type Db, type StorageProvider } from "@sceneflow/server";
 import { FFMPEG, ffmpeg, ffprobe } from "./ffmpeg.js";
 
 /*
@@ -35,6 +35,9 @@ export interface ExportResult {
   slowFrames: number;
   renderMs: number;
   pageErrors: string[];
+  format: "mp4" | "webm" | "gif";
+  /** Videos played from their original upload instead of a rendition. */
+  fromOriginal: number;
 }
 
 const RUNTIME_FILE = createRequire(import.meta.url).resolve("@sceneflow/core/runtime");
@@ -58,11 +61,13 @@ const MIME: Record<string, string> = { ".mp4": "video/mp4", ".m4v": "video/mp4",
  * `preload=metadata` video (it shows the poster), so the harness forces `preload=auto` and nudges a video whose
  * clock is right but has no decoded frame yet.
  */
-function renderPageHtml(config: Project, device: Device, width: number, height: number, runtimeUrl: string): string {
+function renderPageHtml(config: Project, device: Device, width: number, height: number, runtimeUrl: string, alpha = false): string {
   const json = JSON.stringify(config).replace(/</g, "\\u003c");
+  // A transparent canvas renders on white for MP4 / GIF; a WebM with alpha keeps it see-through.
+  const background = alpha ? "transparent" : config.canvas.background === "transparent" ? "#fff" : config.canvas.background;
   return `<!doctype html><html><head><meta charset="utf-8"><title>SceneFlow export</title>
 <style>
-html,body{margin:0;padding:0;background:${config.canvas.background === "transparent" ? "#fff" : config.canvas.background};overflow:hidden}
+html,body{margin:0;padding:0;background:${background};overflow:hidden}
 #root{width:${width}px;height:${height}px;position:relative;overflow:hidden}
 .sceneflow-play,.sceneflow-cc,.sceneflow-toast{display:none!important}
 .sceneflow-layer,.sceneflow-captions,.sceneflow-media>*{transition:none!important}
@@ -152,10 +157,10 @@ html,body{margin:0;padding:0;background:${config.canvas.background === "transpar
 }
 
 /** Serves a file from the local public folder to Chrome, honouring Range requests the way a static server would. */
-async function serveLocalFile(route: Route, path: string | null): Promise<void> {
+async function serveLocalFile(route: Route, path: string | null, contentType?: string): Promise<void> {
   const st = path ? await stat(path).catch(() => null) : null;
   if (!st?.isFile()) return route.fulfill({ status: 404, body: "" });
-  const type = MIME[extname(path!).toLowerCase()] ?? "application/octet-stream";
+  const type = contentType ?? MIME[extname(path!).toLowerCase()] ?? "application/octet-stream";
   const m = /^bytes=(\d*)-(\d*)$/.exec(route.request().headers()["range"] ?? "");
   let start = 0;
   let end = st.size - 1;
@@ -226,13 +231,21 @@ async function resolveAudioFile(deps: ExportDeps, workDir: string, cue: AudioCue
   }
 }
 
-const encodeArgs = (fps: number, out: string) => [
-  "-hide_banner", "-loglevel", "error", "-y",
-  "-f", "image2pipe", "-framerate", String(fps), "-c:v", FRAME_FORMAT.decoder, "-i", "pipe:0",
-  "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2",
-  "-g", String(fps * 2), "-r", String(fps), "-an", "-movflags", "+faststart", "-threads", "0",
-  out,
-];
+/** Frames arrive as JPEG (opaque) or PNG (alpha) on stdin; the video codec follows the file type. */
+function encodeArgs(fps: number, out: string, kind: "h264" | "vp9", alpha: boolean): string[] {
+  const input = ["-hide_banner", "-loglevel", "error", "-y", "-f", "image2pipe", "-framerate", String(fps), "-c:v", alpha ? "png" : FRAME_FORMAT.decoder, "-i", "pipe:0"];
+  const video =
+    kind === "h264"
+      ? ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "5.1", "-movflags", "+faststart"]
+      : // VP9 constant quality; an alpha channel needs yuva420p and no alt-ref frames.
+        ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "31", "-deadline", "good", "-cpu-used", "2", "-row-mt", "1", "-pix_fmt", alpha ? "yuva420p" : "yuv420p", ...(alpha ? ["-auto-alt-ref", "0"] : [])];
+  return [...input, ...video, "-g", String(fps * 2), "-r", String(fps), "-an", "-threads", "0", out];
+}
+
+/** A silent MP4 turned into a looping GIF with a palette made for this very video (much better than the 256 web colours). */
+function gifArgs(input: string, out: string, fps: number): string[] {
+  return ["-i", input, "-vf", `fps=${fps},split[a][b];[a]palettegen=max_colors=256[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, "-loop", "0", out];
+}
 
 async function setProgress(db: Db, id: string, stage: string, percent: number): Promise<void> {
   await db.update(videoExports).set({ status: "rendering", progressJson: { stage, percent: Math.round(percent) }, updatedAt: new Date() }).where(eq(videoExports.id, id));
@@ -248,7 +261,28 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
   let browser: Browser | null = null;
   try {
     const opts = row.optionsJson;
-    const config = exportConfig(row.configJson);
+    const format = opts.format ?? "mp4";
+    const alpha = format === "webm" && Boolean(opts.transparent);
+    // Original uploads the browser can decode (and not much bigger than the frame) play instead of renditions.
+    const base = deps.publicUrl.replace(/\/$/, "");
+    const originals: Record<string, string> = {};
+    const originalFiles = new Map<string, { path: string; type: string }>();
+    const ids = videoAssetIds(row.configJson).filter((id) => uuidRe.test(id));
+    if (ids.length) {
+      const assets = await db.query.mediaAssets.findMany({ where: and(inArray(mediaAssets.id, ids), eq(mediaAssets.workspaceId, row.workspaceId)) });
+      for (const a of assets) {
+        if (a.type !== "video" || a.status !== "ready" || !useOriginalSource(a.metadataJson, opts)) continue;
+        try {
+          const path = await storage.readOriginal(a.providerAssetId);
+          const ext = extname(path).toLowerCase();
+          originalFiles.set(a.id, { path, type: ext === ".webm" ? "video/webm" : "video/mp4" });
+          originals[a.id] = `${base}/__sceneflow_export__/original/${a.id}`;
+        } catch {
+          /* original not readable: the rendition plays */
+        }
+      }
+    }
+    const config = exportConfig(row.configJson, originals);
     // `duration` is timeline (video) seconds; the file is `duration / speed` seconds long and frame k shows timeline time k/fps·speed.
     const duration = Math.min(projectDuration(config), MAX_EXPORT_SECONDS);
     if (!(duration > 0) || !config.scenes.length) throw new Error("This project has no scenes yet — open the editor and add a video or a template first.");
@@ -263,10 +297,18 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
     const page = await context.newPage();
     const pageErrors: string[] = [];
     page.on("pageerror", (e) => pageErrors.push(e.message));
-    const base = deps.publicUrl.replace(/\/$/, "");
+    const cdp = await context.newCDPSession(page);
+    // Alpha: Chrome paints a white page background unless told otherwise.
+    if (alpha) await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } });
     const runtimeUrl = `${base}/__sceneflow_export__/runtime.js`;
     const runtime = await readFile(RUNTIME_FILE);
-    const html = renderPageHtml(config, opts.device, opts.width, opts.height, runtimeUrl);
+    const html = renderPageHtml(config, opts.device, opts.width, opts.height, runtimeUrl, alpha);
+    if (originalFiles.size) {
+      await page.route(`${base}/__sceneflow_export__/original/*`, (r) => {
+        const f = originalFiles.get(r.request().url().split("/").pop() ?? "");
+        return serveLocalFile(r, f?.path ?? null, f?.type);
+      });
+    }
     await page.route(runtimeUrl, (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: runtime }));
     await page.route(`${base}/__sceneflow_export__`, (r) => r.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }));
     // Local storage: media straight from disk — no dependency on the API being up, no copy through HTTP.
@@ -282,14 +324,13 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
       throw new Error(`The player could not load this project: ${firstLine(err)}`);
     }
 
-    // ---- frames → H.264 ----
-    const videoFile = join(workDir, "video.mp4");
-    const enc = spawn(FFMPEG, encodeArgs(fps, videoFile), { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
+    // ---- frames → H.264 (MP4, and the GIF's intermediate) or VP9 (WebM) ----
+    const videoFile = join(workDir, format === "webm" ? "video.webm" : "video.mp4");
+    const enc = spawn(FFMPEG, encodeArgs(fps, videoFile, format === "webm" ? "vp9" : "h264", alpha), { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
     let encErr = "";
     enc.stderr.on("data", (d: Buffer) => (encErr += d.toString()));
     enc.stdin.on("error", () => {}); // EPIPE is reported through the exit code below
     const encExit = new Promise<number | null>((resolve) => enc.on("close", resolve));
-    const cdp = await context.newCDPSession(page);
     const started = Date.now();
     let slowFrames = 0;
     let lastReport = 0;
@@ -297,7 +338,7 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
       if (enc.exitCode !== null) throw new Error(`Video encoding stopped: ${encErr.trim().slice(-600) || "ffmpeg exited early"}`);
       const t = Math.min(duration, (i / fps) * speed);
       if (await page.evaluate(`window.__sfExport.frame(${t})`)) slowFrames++;
-      const shot = await cdp.send("Page.captureScreenshot", { format: FRAME_FORMAT.format, quality: FRAME_FORMAT.quality, clip: { x: 0, y: 0, width: opts.width, height: opts.height, scale: 1 }, captureBeyondViewport: false, fromSurface: true });
+      const shot = await cdp.send("Page.captureScreenshot", { ...(alpha ? { format: "png" as const } : { format: FRAME_FORMAT.format, quality: FRAME_FORMAT.quality }), clip: { x: 0, y: 0, width: opts.width, height: opts.height, scale: 1 }, captureBeyondViewport: false, fromSurface: true });
       if (!enc.stdin.write(Buffer.from(shot.data, "base64"))) await once(enc.stdin, "drain");
       const now = Date.now();
       if (now - lastReport > 1500 || i === frames - 1) {
@@ -313,10 +354,10 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
     await browser.close().catch(() => {});
     browser = null;
 
-    // ---- audio ----
-    await setProgress(db, row.id, "Mixing audio", 92);
+    // ---- audio (none in a GIF) ----
+    await setProgress(db, row.id, format === "gif" ? "Making the GIF" : "Mixing audio", 92);
     const inputs: Array<{ cue: AudioCue; file: string }> = [];
-    for (const [i, cue] of audioPlan(config, duration).entries()) {
+    for (const [i, cue] of (format === "gif" ? [] : audioPlan(config, duration)).entries()) {
       const file = await resolveAudioFile(deps, workDir, cue, row.workspaceId, i);
       if (!file) continue;
       const probe = await ffprobe(file).catch(() => null);
@@ -325,24 +366,29 @@ export async function renderExport(deps: ExportDeps, exportId: string): Promise<
     let finalFile = videoFile;
     if (inputs.length) {
       const graph = audioFilterGraph(inputs.map((x) => x.cue), wallDuration, speed);
-      finalFile = join(workDir, "final.mp4");
-      await ffmpeg(["-i", videoFile, ...inputs.flatMap((x) => ["-i", x.file]), "-filter_complex", graph.filter, "-map", "0:v", "-map", graph.out, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-t", wallDuration.toFixed(3), "-movflags", "+faststart", finalFile]);
+      finalFile = join(workDir, format === "webm" ? "final.webm" : "final.mp4");
+      const audioCodec = format === "webm" ? ["-c:a", "libopus", "-b:a", "128k"] : ["-c:a", "aac", "-b:a", "192k"];
+      await ffmpeg(["-i", videoFile, ...inputs.flatMap((x) => ["-i", x.file]), "-filter_complex", graph.filter, "-map", "0:v", "-map", graph.out, "-c:v", "copy", ...audioCodec, "-ar", "48000", "-t", wallDuration.toFixed(3), ...(format === "webm" ? [] : ["-movflags", "+faststart"]), finalFile]);
+    }
+    if (format === "gif") {
+      finalFile = join(workDir, "final.gif");
+      await ffmpeg(gifArgs(videoFile, finalFile, fps));
     }
 
     // ---- store ----
     await setProgress(db, row.id, "Saving the file", 97);
     const probe = await ffprobe(finalFile);
     const sizeBytes = (await stat(finalFile)).size;
-    const key = `${row.workspaceId}/exports/${row.id}.mp4`;
-    const fileName = row.fileName ?? exportFileName("video", opts.quality);
-    await storage.putPublic(key, finalFile, "video/mp4", { contentDisposition: `attachment; filename="${fileName}"` });
+    const key = `${row.workspaceId}/exports/${row.id}.${format}`;
+    const fileName = row.fileName ?? exportFileName("video", opts.quality, format);
+    await storage.putPublic(key, finalFile, EXPORT_MIME[format], { contentDisposition: `attachment; filename="${fileName}"` });
     await db.update(videoExports).set({ status: "ready", storageKey: key, fileName, sizeBytes, durationSec: probe.duration, progressJson: null, error: null, finishedAt: new Date(), updatedAt: new Date() }).where(eq(videoExports.id, row.id));
     try {
-      await db.insert(projectActivity).values({ workspaceId: row.workspaceId, projectId: row.projectId, type: "exported", actorName: row.requestedByName, detail: `v${row.version} ${opts.quality}` });
+      await db.insert(projectActivity).values({ workspaceId: row.workspaceId, projectId: row.projectId, type: "exported", actorName: row.requestedByName, detail: `v${row.version} ${opts.quality}${format === "mp4" ? "" : ` ${format.toUpperCase()}`}` });
     } catch {
       /* the feed is informational */
     }
-    return { sizeBytes, durationSec: probe.duration, frames, slowFrames, renderMs, pageErrors };
+    return { sizeBytes, durationSec: probe.duration, frames, slowFrames, renderMs, pageErrors, format, fromOriginal: Object.keys(originals).length };
   } catch (err) {
     const message = (err instanceof Error ? err.message : String(err)).slice(0, 1000);
     await db.update(videoExports).set({ status: "failed", error: message, progressJson: null, finishedAt: new Date(), updatedAt: new Date() }).where(eq(videoExports.id, row.id));

@@ -20,6 +20,7 @@ import { publicRoutes } from "./routes/public.js";
 import { reviewRoutes } from "./routes/review.js";
 import { siteRoutes } from "./routes/sites.js";
 import { workspaceRoutes } from "./routes/workspace.js";
+import { startAnalyticsRetention } from "./lib/retention.js";
 
 export interface BuildDeps {
   /** Inject a fake in tests; defaults to a pg-boss instance on the same database. */
@@ -100,7 +101,9 @@ export async function buildApp(cfg: AppConfig, deps: BuildDeps = {}): Promise<Fa
     await app.register(fastifyStatic, { root: cfg.wpPluginDistDir, prefix: "/downloads/", decorateReply: false, index: false, list: false, allowedPath: (p) => p.endsWith(".zip") });
   }
 
+  const retention = startAnalyticsRetention(ctx, (line) => app.log.info(line));
   app.addHook("onClose", async () => {
+    retention.stop();
     await queue.stop?.();
     await close();
   });

@@ -42,6 +42,9 @@ export const ACTION_LABEL: Record<string, string> = {
   "user.send_password_reset": "Sent password reset link",
   "users.export_csv": "Downloaded accounts CSV",
   "site.check": "Checked site",
+  "user.set_temp_password": "Set a temporary password",
+  "user.create_login_link": "Created a sign-in link",
+  "user.login_link_used": "Signed in with an admin's link",
 };
 
 export function detailText(detail: unknown): string {
@@ -53,6 +56,8 @@ export function detailText(detail: unknown): string {
   if (d.via === "cli") parts.push("from the server CLI");
   if (typeof d.rows === "number") parts.push(`${d.rows} rows`);
   if (typeof d.minutes === "number") parts.push(`${d.minutes} min session`);
+  if (typeof d.hours === "number") parts.push(`valid ${d.hours >= 24 ? `${d.hours / 24} day${d.hours === 24 ? "" : "s"}` : `${d.hours} h`}`);
+  if (d.passwordSetup === true) parts.push("asks for a new password");
   if (d.delivery === "email") parts.push("e-mailed");
   if (d.delivery === "log") parts.push("written to the outbox (no mail service)");
   return parts.join(" · ");

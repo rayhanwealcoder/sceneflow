@@ -4,11 +4,18 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Funnel, LineChart, TimelineChart } from "@/components/analytics/charts";
-import { api, errorMessage } from "@/lib/api";
+import { api, API_URL, errorMessage } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import type { AnalyticsSummary, Project } from "@/lib/types";
 
-const RANGES = [7, 30, 90] as const;
+const RANGES = [7, 30, 90, 365] as const;
+const money = (amount: number, currency: string) => {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+};
 const fmtSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s.toFixed(s < 10 ? 1 : 0)}s`);
 
 /** Doc §24: basic dashboard + engagement timeline. Everything comes from one summary request. */
@@ -61,12 +68,20 @@ export default function AnalyticsPage() {
           </Link>
           <h1>Analytics</h1>
         </div>
-        <div className="tabs" role="tablist" aria-label="Range">
-          {RANGES.map((r) => (
-            <button key={r} className={days === r ? "on" : ""} onClick={() => setDays(r)} type="button">
-              Last {r} days
-            </button>
-          ))}
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="tabs" role="tablist" aria-label="Range">
+            {RANGES.map((r) => (
+              <button key={r} className={days === r ? "on" : ""} onClick={() => setDays(r)} type="button">
+                {r === 365 ? "Last year" : `Last ${r} days`}
+              </button>
+            ))}
+          </div>
+          <a className="btn sm" href={`${API_URL}/api/v1/projects/${project.id}/analytics.csv?days=${days}&view=daily`} data-testid="analytics-csv" title="One row per day: loads, plays, clicks, carts, orders, revenue">
+            Download CSV
+          </a>
+          <a className="btn sm" href={`${API_URL}/api/v1/projects/${project.id}/analytics.csv?days=${days}&view=events`} data-testid="analytics-csv-events" title="Every anonymous event in this range (up to 100 000)">
+            Raw events
+          </a>
         </div>
       </div>
       {error && <div className="alert error">{error}</div>}
@@ -88,6 +103,12 @@ export default function AnalyticsPage() {
             <Stat label="Avg. watch time" value={fmtSec(t!.avgWatchSeconds)} hint={data.timeline.duration ? `video is ${fmtSec(data.timeline.duration)}` : ""} />
             <Stat label="Clicks" value={t!.clicks} hint="buttons + hotspots" />
             <Stat label="Add to cart" value={t!.addToCarts} hint={`${t!.checkouts} checkout${t!.checkouts === 1 ? "" : "s"} · ${t!.productViews} product views`} />
+            {(t!.orders ?? 0) > 0 && (
+              <>
+                <Stat label="Orders" value={t!.orders!} hint={t!.conversionRate != null ? `${t!.conversionRate} per 100 plays` : "paid orders"} testId="stat-orders" />
+                <Stat label="Revenue" value={(t!.revenue ?? []).map((r) => money(r.revenue, r.currency)).join(" + ")} hint="from products added in this video" testId="stat-revenue" />
+              </>
+            )}
           </div>
 
           <section className="card stack">
@@ -196,7 +217,7 @@ export default function AnalyticsPage() {
             <section className="card stack">
               <h2>Products</h2>
               {data.products.length === 0 ? (
-                <p className="muted small">Product views, add-to-carts and checkouts started from this video.</p>
+                <p className="muted small">Product views, add-to-carts and checkouts started from this video, and paid orders when your shop runs SceneFlow 0.8.0 or newer with analytics on.</p>
               ) : (
                 <table className="data-table small">
                   <thead>
@@ -205,6 +226,8 @@ export default function AnalyticsPage() {
                       <th>Views</th>
                       <th>Add to cart</th>
                       <th>Checkout</th>
+                      <th>Orders</th>
+                      <th>Revenue</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -214,6 +237,8 @@ export default function AnalyticsPage() {
                         <td>{p.views}</td>
                         <td>{p.addToCarts}</td>
                         <td>{p.checkouts}</td>
+                        <td>{p.orders ?? 0}</td>
+                        <td>{p.revenue && t!.revenue?.length === 1 ? money(p.revenue, t!.revenue[0]!.currency) : (p.revenue ?? 0) || "–"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -248,7 +273,7 @@ export default function AnalyticsPage() {
             </section>
           </div>
           <p className="muted small">
-            Anonymous: no cookies, no IP addresses stored; a random per-tab id groups a visit. Visitors with Do Not Track or Global Privacy Control are not counted. {t!.errors > 0 ? `${t!.errors} player error${t!.errors === 1 ? "" : "s"} in this range.` : ""}
+            Anonymous: no cookies, no IP addresses stored; a random per-tab id groups a visit. Orders are counted without any customer data. Visitors with Do Not Track or Global Privacy Control are not counted. {t!.errors > 0 ? `${t!.errors} player error${t!.errors === 1 ? "" : "s"} in this range.` : ""}
           </p>
         </>
       )}
@@ -256,9 +281,9 @@ export default function AnalyticsPage() {
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
+function Stat({ label, value, hint, testId }: { label: string; value: number | string; hint?: string; testId?: string }) {
   return (
-    <div className="stat">
+    <div className="stat" data-testid={testId}>
       <span className="small muted">{label}</span>
       <strong className="stat-value">{value}</strong>
       {hint ? <span className="small muted">{hint}</span> : null}

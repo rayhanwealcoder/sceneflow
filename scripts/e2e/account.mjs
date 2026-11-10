@@ -176,5 +176,46 @@ const recipients = await Promise.all((await readdir(OUTBOX).catch(() => [])).map
 if (recipients.includes(nobody)) fail("a mail was written for an address without an account");
 check("unknown address gets the same answer and no mail");
 
+// 13. Change the e-mail address: password needed, link to the new address, notice to the old one.
+const moved = `account-moved-${stamp}@sceneflow.test`;
+await page.goto(`${WEB}/account`);
+await page.waitForSelector("[data-testid=email-card]");
+await page.fill("[data-testid=new-email]", moved);
+await page.fill("[data-testid=email-password]", "wrong-password");
+await page.click("[data-testid=change-email]");
+await page.waitForSelector("[data-testid=email-msg].error");
+await page.fill("[data-testid=new-email]", moved);
+await page.fill("[data-testid=email-password]", pass3);
+await page.click("[data-testid=change-email]");
+await page.waitForSelector("[data-testid=email-msg].ok");
+const confirmMail = await waitForMail((m) => m.to === moved && /Confirm your new SceneFlow e-mail address/.test(m.subject), "confirming the new address");
+await waitForMail((m) => m.to === email && /about to change/.test(m.subject), "warning the old address");
+const confirmLink = confirmMail.text.match(/http:\/\/localhost:3000\/confirm-email\/[0-9a-f]{64}/)?.[0];
+if (!confirmLink) fail("confirmation mail has no link");
+if ((await page.textContent("[data-testid=current-email]")) !== email) fail("address changed before confirming");
+await pageB.goto(confirmLink); // opened on the other device (signed out there), like a phone
+await pageB.waitForSelector(`[data-testid=confirm-new-email]:text-is("${moved}")`);
+await pageB.click("[data-testid=confirm-email]");
+await pageB.waitForSelector("[data-testid=confirm-done]");
+await waitForMail((m) => m.to === email && /e-mail address was changed/.test(m.subject), "telling the old address it changed");
+await page.reload();
+await page.waitForSelector(`[data-testid=current-email]:text-is("${moved}")`);
+await signIn(pageB, moved, pass3);
+await pageB.waitForURL(`${WEB}/projects`, { timeout: 10000 }).catch(async () => fail(`sign-in with the new address did not open projects (${pageB.url()}): ${await pageB.textContent("body").then((t) => t.replace(/\s+/g, " ").slice(0, 300))}`));
+check("e-mail change: wrong password refused, confirm link on the new address, notice on the old, then signs in with the new address");
+
+// 14. Comment / approval mails can be switched off and on.
+await pageB.goto(`${WEB}/account`);
+await pageB.waitForSelector("[data-testid=email-notifications]");
+if (!(await pageB.isChecked("[data-testid=email-notifications]"))) fail("notifications should start on");
+await pageB.click("[data-testid=email-notifications]");
+await pageB.waitForSelector("[data-testid=notify-msg].ok");
+await pageB.reload();
+await pageB.waitForSelector("[data-testid=email-notifications]");
+if (await pageB.isChecked("[data-testid=email-notifications]")) fail("notification switch did not stay off");
+await pageB.click("[data-testid=email-notifications]");
+await pageB.waitForSelector("[data-testid=notify-msg].ok");
+check("comment / approval mail switch saves");
+
 await browser.close();
-console.log(`\nAll good: ${problems.length} page errors. Account ${email} / ${pass3} (kept).`);
+console.log(`\nAll good: ${problems.length} page errors. Account ${moved} / ${pass3} (kept).`);

@@ -71,6 +71,20 @@
       "when": 1794302819591,
       "tag": "0009_powerful_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794305215472,
+      "tag": "0010_sudden_zzzax",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794305925622,
+      "tag": "0011_cultured_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

@@ -4,15 +4,16 @@
  * Reads are aggregate SQL; every write is audited in admin_audit. Nothing here deletes data: accounts are
  * disabled, never removed.
  */
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ADMIN_TARGETS, adminAudit, PLAN_IDS, PLATFORM_ROLES, QUEUES, sessions, users, workspaces } from "@sceneflow/server";
+import { ADMIN_TARGETS, adminAudit, loginLinks, passwordChangedMail, passwordResets, PLAN_IDS, PLATFORM_ROLES, QUEUES, sessions, users, workspaces } from "@sceneflow/server";
 import { z } from "zod";
 import { HttpError, type Ctx } from "../context.js";
-import { audit, csvCell, likePattern, num, paging, rows } from "../lib/admin.js";
-import { cookieOptions, hashToken, IMPERSONATION_TTL_MS, IMPERSONATOR_COOKIE, requireSuperAdmin, SESSION_COOKIE, startSession } from "../lib/auth.js";
+import { audit, csvCell, likePattern, num, paging, rows, temporaryPassword } from "../lib/admin.js";
+import { cookieOptions, hashPassword, hashToken, IMPERSONATION_TTL_MS, IMPERSONATOR_COOKIE, requireSuperAdmin, SESSION_COOKIE, startSession } from "../lib/auth.js";
 import { issuePasswordReset } from "../lib/reset.js";
 import { loadSite, refreshSiteHealth } from "../lib/sites.js";
 import { assertUuid, parseBody } from "../lib/validate.js";
@@ -20,6 +21,9 @@ import { assertUuid, parseBody } from "../lib/validate.js";
 const lim = { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } };
 const userPatch = z.object({ status: z.enum(["active", "disabled"]).optional(), platformRole: z.enum(PLATFORM_ROLES).optional() }).refine((b) => b.status || b.platformRole, "Nothing to change");
 const workspacePatch = z.object({ planId: z.enum(PLAN_IDS) });
+/** Sign-in links: 1 hour, 1 day, 3 days or 7 days. */
+export const LOGIN_LINK_HOURS = [1, 24, 72, 168] as const;
+const loginLinkBody = z.object({ hours: z.union([z.literal(1), z.literal(24), z.literal(72), z.literal(168)]).default(24), passwordSetup: z.boolean().default(true) });
 const retryBody = z.object({ queue: z.enum(Object.values(QUEUES) as [string, ...string[]]) });
 const strOrNull = (v: unknown, allowed: readonly string[]) => (typeof v === "string" && allowed.includes(v) ? v : null);
 
@@ -264,6 +268,9 @@ export async function adminRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
           from video_exports e join projects p on p.id = e.project_id join workspaces w on w.id = e.workspace_id
           where e.status = 'failed' order by e.finished_at desc nulls last limit 10`,
     );
+    // Planner estimate: exact counts of a big events table are slow, and "about" is all this card needs.
+    const [ev] = await rows<{ n: string | null }>(ctx, sql`select reltuples::bigint as n from pg_class where relname = 'analytics_events'`);
+    const [so] = await rows<{ n: string }>(ctx, sql`select count(*) as n from shop_orders`);
     let ai: unknown = null;
     try {
       ai = await Promise.race([ctx.ai.status(), new Promise((r) => setTimeout(() => r(null), 3000))]);
@@ -281,6 +288,7 @@ export async function adminRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
       mail: ctx.mailer.status(),
       ai,
       storage: { provider: ctx.storage.id },
+      analytics: { retentionDays: ctx.cfg.analyticsRetentionDays, eventsApprox: Math.max(0, num(ev?.n)), orderLines: num(so?.n) },
       server: { node: process.version, uptimeSec: Math.round(process.uptime()), dbBytes: num(stuck?.db_bytes), publicUrl: ctx.cfg.publicUrl, webOrigin: ctx.cfg.webOrigin },
     };
   });
@@ -299,6 +307,17 @@ export async function adminRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     return { ok: true };
   });
 
+
+  /** The account a support action is for: exists, is active, is not you and not another super admin. */
+  async function supportTarget(rawId: string, actorId: string) {
+    const id = assertUuid(rawId, "user id");
+    const target = await ctx.db.query.users.findFirst({ where: eq(users.id, id), columns: { id: true, email: true, name: true, status: true, platformRole: true } });
+    if (!target) throw new HttpError(404, "NOT_FOUND", "User not found");
+    if (target.id === actorId) throw new HttpError(400, "NOT_ON_YOURSELF", "Use your Account page for your own password.");
+    if (target.platformRole === "super_admin") throw new HttpError(400, "TARGET_IS_ADMIN", "Not available for super admins.");
+    if (target.status !== "active") throw new HttpError(400, "USER_DISABLED", "Enable the account first.");
+    return target;
+  }
 
   /**
    * "Sign in as" for support: a 1-hour session as the user, flagged with the admin's id (banner in the app,
@@ -330,6 +349,46 @@ export async function adminRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
     await issuePasswordReset(ctx, target);
     await audit(ctx, req, actor, { action: "user.send_password_reset", targetType: "user", targetId: id, targetLabel: target.email, detail: { delivery: ctx.mailer.delivers ? "email" : "log" } });
     return { ok: true, delivery: ctx.mailer.delivers ? "email" : "log" };
+  });
+
+  /**
+   * "Set temporary password": for someone who cannot receive mail. The server picks the password, shows it to
+   * the admin once, signs the account out everywhere and makes the next sign-in choose a new password (the
+   * temporary one works for exactly that step). The user gets a "password changed" mail when mail works.
+   */
+  app.post<{ Params: { id: string } }>("/api/v1/admin/users/:id/temp-password", lim, async (req) => {
+    const actor = await requireSuperAdmin(ctx, req);
+    const target = await supportTarget(req.params.id, actor.id);
+    const temporary = temporaryPassword();
+    const passwordHash = await hashPassword(temporary);
+    let endedSessions = 0;
+    await ctx.db.transaction(async (tx) => {
+      await tx.update(users).set({ passwordHash, mustChangePassword: true }).where(eq(users.id, target.id));
+      endedSessions = (await tx.delete(sessions).where(eq(sessions.userId, target.id)).returning({ id: sessions.id })).length;
+      await tx.delete(passwordResets).where(and(eq(passwordResets.userId, target.id), isNull(passwordResets.usedAt)));
+    });
+    ctx.mailer.sendLater({ to: target.email, ...passwordChangedMail({ webOrigin: ctx.cfg.webOrigin }, { name: target.name, resetLink: `${ctx.cfg.webOrigin}/forgot` }) });
+    await audit(ctx, req, actor, { action: "user.set_temp_password", targetType: "user", targetId: target.id, targetLabel: target.email, detail: { endedSessions } });
+    return { password: temporary, endedSessions };
+  });
+
+  /**
+   * "Create sign-in link": a single-use link the admin hands over (chat, phone). It opens one normal session;
+   * with `passwordSetup` (default) that session must choose a new password first. A new link retires the
+   * user's earlier unused ones. The link is returned once and only its hash is stored.
+   */
+  app.post<{ Params: { id: string } }>("/api/v1/admin/users/:id/login-link", lim, async (req) => {
+    const actor = await requireSuperAdmin(ctx, req);
+    const body = parseBody(loginLinkBody, req.body ?? {});
+    const target = await supportTarget(req.params.id, actor.id);
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + body.hours * 3600_000);
+    await ctx.db.transaction(async (tx) => {
+      await tx.delete(loginLinks).where(and(eq(loginLinks.userId, target.id), isNull(loginLinks.usedAt)));
+      await tx.insert(loginLinks).values({ id: hashToken(token), userId: target.id, createdBy: actor.id, passwordSetup: body.passwordSetup, expiresAt });
+    });
+    await audit(ctx, req, actor, { action: "user.create_login_link", targetType: "user", targetId: target.id, targetLabel: target.email, detail: { hours: body.hours, passwordSetup: body.passwordSetup } });
+    return { link: `${ctx.cfg.webOrigin}/sign-in-link/${token}`, expiresAt, passwordSetup: body.passwordSetup };
   });
 
   /** Accounts as CSV (same filters as the list, up to 10 000 rows). Exporting personal data is audited. */

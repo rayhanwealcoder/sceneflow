@@ -4,7 +4,7 @@ Tags: video, interactive video, shoppable video, woocommerce, gutenberg
 Requires at least: 6.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.7.0
+Stable tag: 0.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -14,9 +14,10 @@ Interactive and shoppable video from SceneFlow on your WordPress site.
 
 SceneFlow lets you build interactive, shoppable videos in the SceneFlow editor and publish them to WordPress with one click.
 
-* `[sceneflow id="..."]` shortcode and a "SceneFlow Video" block
+* `[sceneflow id="..."]` shortcode, a "SceneFlow Video" block, and native "SceneFlow Video" elements for Elementor and Bricks (any other builder: the shortcode)
 * Place a player on any existing element of a page straight from SceneFlow (no page editing)
 * WooCommerce: pick products in the editor, show live price and stock in the video, add to cart / buy now / apply coupons from the player (WooCommerce is optional)
+* Sales from a video: with playback analytics on, orders that contain products added from a video show up as orders and revenue on the video's Analytics page in SceneFlow
 * Published videos are stored on your site, so they keep working even if SceneFlow is unreachable
 * Lightweight runtime (about 35 KB gzipped), no jQuery
 * Secure pairing: one-time code, HMAC-signed publish requests
@@ -29,6 +30,7 @@ This plugin connects your site to the SceneFlow service (https://sceneflow.app),
 * When you publish, preview or place a video from the SceneFlow editor, SceneFlow sends the project configuration to this site; the plugin also answers signed requests for your pages, media library items and (if WooCommerce is active) product data so you can pick them in the editor.
 * Video files are served from SceneFlow's media storage to your visitors' browsers when a video plays.
 * Playback analytics (off until you turn it on: the settings page asks once after connecting, and the switch is under Settings → SceneFlow → Advanced): when on, the player sends anonymous events — player loaded, play/pause, how far the video was watched, scene changes, clicks on buttons/hotspots/product cards, add-to-cart — together with the page URL, a device class (desktop/tablet/mobile) and a random per-tab session id. No cookies are set, no IP address or personal data is stored, and visitors with "Do Not Track" or Global Privacy Control are not counted. Cart actions stay on your own site (WooCommerce Store API).
+* Sales from a video (WooCommerce, only while playback analytics is on): when a visitor adds a product to the cart from a video, the order line notes which video it came from (and the same random per-tab id). SceneFlow reads those orders with a signed request when you open a video's Analytics page: order number, status, currency, paid/modified dates and, for the lines that came from a video, product id, quantity and amount after refunds. No names, addresses, e-mail addresses or payment details are shared, and nothing is sent while analytics is off.
 
 Terms of service: https://sceneflow.app/terms — Privacy policy: https://sceneflow.app/privacy
 
@@ -53,6 +55,13 @@ No. Without WooCommerce, product cards and buttons open the product link you set
 Yes. Published configurations are stored in your database and served from your site; only the media files load from SceneFlow's storage.
 
 == Changelog ==
+
+= 0.8.0 =
+* New: "SceneFlow Video" widget for Elementor and element for Bricks: pick a published video from a list and set an optional maximum width. They render exactly like the shortcode and the block, also inside the builder's preview.
+* New: sales from a video. With playback analytics on, a product added to the cart from a video is noted on the order line, and SceneFlow shows the orders and revenue the video brought in (signed request from SceneFlow; no customer data; see "External services").
+* Suggested privacy policy text updated for the above.
+* Fixed: "Place on your site" could miss the newest of many pages with the same title (the list now shows the newest of those first).
+* Fixed: a product added from a video could land in a separate cart session instead of the site's own cart, so the cart and checkout pages looked empty.
 
 = 0.7.0 =
 * Playback analytics is now opt-in: nothing is sent until the site owner turns it on (Settings → SceneFlow asks once after connecting). Sites that never changed the switch stop sending events with this update.
@@ -96,6 +105,9 @@ Yes. Published configurations are stored in your database and served from your s
 * First release: pairing, publish, shortcode, block, element placements, draft preview, media listing.
 
 == Upgrade Notice ==
+
+= 0.8.0 =
+Elementor and Bricks elements, and sales from a video on the Analytics page (when playback analytics is on).
 
 = 0.7.0 =
 Playback analytics becomes opt-in: turn it on under Settings → SceneFlow if you use the Analytics page in SceneFlow. Security hardening.

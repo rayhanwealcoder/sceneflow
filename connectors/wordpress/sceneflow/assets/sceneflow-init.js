@@ -101,4 +101,6 @@
 		init();
 	}
 	window.sceneflowInit = init;
+	/* Bricks calls this after it renders a SceneFlow element in the builder canvas. */
+	window.sceneflowBricksInit = init;
 } )();

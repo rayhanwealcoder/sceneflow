@@ -134,7 +134,7 @@ export function TopBar({
                 </button>
               )}
               <Link href={`/projects/${projectId}#export`} title="Render a plain video file of this project (for social, ads, e-mail)" data-testid="export-link">
-                Download as MP4…
+                Download as video…
               </Link>
             </div>
           </details>

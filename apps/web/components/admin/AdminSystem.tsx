@@ -15,6 +15,7 @@ interface System {
   mail: { provider: string; label: string; delivers: boolean; from: string; hint: string | null };
   ai: { text: { label: string; real: boolean }; speech: { label: string } | null; transcription: { label: string } | null; hints: string[] } | null;
   storage: { provider: string };
+  analytics?: { retentionDays: number; eventsApprox: number; orderLines: number };
   server: { node: string; uptimeSec: number; dbBytes: number; publicUrl: string; webOrigin: string };
 }
 
@@ -107,6 +108,10 @@ export function AdminSystem() {
             </dd>
             <dt>Storage</dt>
             <dd>{s.storage.provider === "s3" ? "S3-compatible bucket" : "Local disk"}</dd>
+            <dt>Analytics</dt>
+            <dd data-testid="analytics-retention">
+              {s.analytics ? `${s.analytics.retentionDays ? `kept ${s.analytics.retentionDays} days` : "kept forever"} · about ${s.analytics.eventsApprox.toLocaleString()} events · ${s.analytics.orderLines.toLocaleString()} sold order lines` : "unknown"}
+            </dd>
             <dt>Database</dt>
             <dd>{fmtBytes(s.server.dbBytes)}</dd>
             <dt>API</dt>

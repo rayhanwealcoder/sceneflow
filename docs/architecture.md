@@ -183,12 +183,21 @@ site    -> GET  /wp-json/sceneflow/v1/project/<id>  (same-origin, etag = checksu
 - **Impersonation** is a separate, flagged session, never a cookie swap of the user's own session: the admin's token waits in `sf_impersonator` (httpOnly, 1 h) and is restored only if it is still valid and still the impersonator's. `getUser()` reports `impersonatedBy` and forces `superAdmin: false` inside such a session.
 - **Site health** is stored at pairing and on explicit checks (`refreshSiteHealth()`); the admin Sites view compares it with the latest release in `dist/connectors/manifest.json`.
 
+## Support, account mails, builders, sales, exports (Phase 16)
+
+- **Password-setup sessions**: a temporary password (`users.must_change_password`) or an admin sign-in link (`login_links.password_setup`) opens a session with `sessions.password_setup`; `requireUser()` refuses it (`403 PASSWORD_SETUP`) except where a route passes `allowPasswordSetup` (password change, workspace list), so a password someone else has seen never works beyond that one step. The web app routes such a session to `/account?setup=1`.
+- **Tokens in links** (reset, e-mail change, sign-in link) are 32 random bytes, stored as sha256, single use; a GET only describes the link, a POST spends it.
+- **Notifications** go through `lib/notify.ts` after the response (`mailer.sendLater`), only to active members with `email_notifications` on, never to the actor.
+- **Revenue attribution** is pull-based, like every other cloud → site call: the plugin never sends anything on its own. Cart line → order line meta (`_sceneflow_project`, `_sceneflow_session`) → order meta `_sceneflow_attributed` → signed `GET /sceneflow/v1/orders` → `shop_orders` (one row per order line, upserted). Lines for projects outside the site's workspace are dropped.
+- **Exports** pick the source per video asset (`useOriginalSource`), the encoder per file type (H.264 / VP9 / GIF via an H.264 intermediate) and PNG frames on a transparent page only for WebM with alpha.
+- **Builder elements** are thin wrappers around `render_player()`; the runtime registers on demand from their render / `enqueue_scripts`, and editor previews re-mount through `window.sceneflowInit` (alias `sceneflowBricksInit`).
+
 ## Open items carried forward
 
 - WordPress.org submission needs the final product name / domain (live terms + privacy pages) and the WordPress.org username in `Contributors:` (doc §34).
-- Elementor / Bricks / Divi / Breakdance native widgets (the shortcode and placements already work inside them).
+- Divi / Breakdance native modules (Elementor and Bricks have one; the shortcode and placements work everywhere).
 - Shopify / Easy Digital Downloads / SureCart catalogs on the server side (runtime adapter pattern is ready); Shopify extension not yet exercised on a live store.
 - Preset marketplace / sharing across workspaces (agency scope), scene-level "refresh from preset".
-- Analytics: revenue / conversion attribution (doc 24.2) needs order webhooks from the shop; A/B comparison; CSV export; retention policy for `analytics_events`.
-- E-mail for mentions and approvals (the dashboard is the inbox for now); changing the account e-mail address (needs a verification round trip); client portal with several projects per link.
-- Export: render video layers from the original upload, WebM / GIF outputs, social presets (safe-area guides, square crop), several render workers.
+- Analytics: A/B comparison; revenue attribution for Shopify / other shops (WooCommerce done); retention per plan.
+- Client portal with several projects per link; daily digest instead of one mail per comment.
+- Export: social presets (safe-area guides, re-layout for 9:16 / 1:1 / 4:5), several render workers / chunked rendering.

@@ -3,7 +3,7 @@
  * Plugin Name:       SceneFlow
  * Plugin URI:        https://sceneflow.app
  * Description:       Interactive and shoppable video from SceneFlow on your WordPress site: shortcode, Gutenberg block, element placements, WooCommerce add-to-cart and a lightweight runtime.
- * Version:           0.7.0
+ * Version:           0.8.0
  * Requires at least: 6.3
  * Requires PHP:      7.4
  * Author:            SceneFlow
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SCENEFLOW_VERSION', '0.7.0' );
+define( 'SCENEFLOW_VERSION', '0.8.0' );
 define( 'SCENEFLOW_FILE', __FILE__ );
 define( 'SCENEFLOW_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SCENEFLOW_URL', plugin_dir_url( __FILE__ ) );
@@ -31,6 +31,8 @@ require_once SCENEFLOW_DIR . 'includes/class-sceneflow-config.php';
 require_once SCENEFLOW_DIR . 'includes/class-sceneflow-store.php';
 require_once SCENEFLOW_DIR . 'includes/class-sceneflow-settings.php';
 require_once SCENEFLOW_DIR . 'includes/class-sceneflow-woocommerce.php';
+require_once SCENEFLOW_DIR . 'includes/class-sceneflow-orders.php';
+require_once SCENEFLOW_DIR . 'includes/class-sceneflow-builders.php';
 require_once SCENEFLOW_DIR . 'includes/class-sceneflow-rest.php';
 require_once SCENEFLOW_DIR . 'includes/class-sceneflow-frontend.php';
 require_once SCENEFLOW_DIR . 'includes/class-sceneflow-admin.php';

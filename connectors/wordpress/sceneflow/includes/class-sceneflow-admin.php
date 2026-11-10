@@ -35,7 +35,7 @@ class SceneFlow_Admin {
 		}
 		$text  = '<p>' . esc_html__( 'Interactive videos on this site are provided by SceneFlow. Video files and images are loaded from SceneFlow’s media storage when a video plays; your browser’s IP address is visible to that storage service like to any web server.', 'sceneflow' ) . '</p>';
 		$text .= '<p>' . esc_html__( 'If the site owner has turned on playback analytics, the player sends anonymous events (video loaded, played, how far it was watched, clicks on buttons and products) with the page address, a device class and a random per-tab id to SceneFlow. No cookies are set, no IP address or personal data is stored, and browsers that send “Do Not Track” or Global Privacy Control are not counted.', 'sceneflow' ) . '</p>';
-		$text .= '<p>' . esc_html__( 'Adding a product to the cart from a video uses this shop’s own cart; nothing about the order is sent to SceneFlow.', 'sceneflow' ) . '</p>';
+		$text .= '<p>' . esc_html__( 'Adding a product to the cart from a video uses this shop’s own cart. With playback analytics on, the shop notes on the order which video the product came from (with the same random per-tab id), and SceneFlow may read, for those orders only, the order number, status, currency, dates and the products, quantities and amounts that came from a video, to show the site owner the sales a video brought in. No names, addresses, e-mail addresses or payment details are shared.', 'sceneflow' ) . '</p>';
 		wp_add_privacy_policy_content( 'SceneFlow', wp_kses_post( $text ) );
 	}
 

@@ -1086,7 +1086,7 @@ export class Player {
         }
         case "ADD_TO_CART":
         case "BUY_NOW": {
-          const line: CartLine = { product: action.product, quantity: action.quantity };
+          const line: CartLine = { product: action.product, quantity: action.quantity, ...(this.analytics ? { source: { projectId: this.analytics.projectId, sessionId: this.analytics.sessionId } } : {}) };
           const adapter = this.adapterFor(line.product.provider);
           this.stage?.setBusy(layer.id, true);
           let r: CommerceResult;

@@ -11,7 +11,6 @@
 		return;
 	}
 	var nonce = cfg.nonce || '';
-	var cartToken = '';
 	var primed = null;
 
 	function headers( json ) {
@@ -22,13 +21,12 @@
 		if ( nonce ) {
 			h.Nonce = nonce;
 		}
-		if ( cartToken ) {
-			h[ 'Cart-Token' ] = cartToken;
-		}
+		/* No Cart-Token: that header moves the cart into a separate token session (meant for headless shops),
+		   so the site's own cart and checkout pages would stay empty. Same-origin requests use the cookie session. */
 		return h;
 	}
 
-	/* The Store API rotates nonces; remember the latest one (and the cart token) from every response. */
+	/* The Store API rotates nonces; remember the latest one from every response. */
 	function remember( res ) {
 		var n =
 			res.headers.get( 'Nonce' ) ||
@@ -36,18 +34,30 @@
 		if ( n ) {
 			nonce = n;
 		}
-		var t = res.headers.get( 'Cart-Token' );
-		if ( t ) {
-			cartToken = t;
-		}
 		return res;
 	}
 
-	function store( path, init ) {
+	function store( path, init, extra ) {
 		init = init || {};
 		init.credentials = 'same-origin';
 		init.headers = headers( !! init.body );
+		if ( extra ) {
+			Object.keys( extra ).forEach( function ( k ) {
+				init.headers[ k ] = extra[ k ];
+			} );
+		}
 		return fetch( cfg.storeApi + path, init ).then( remember );
+	}
+
+	/* Which video the click came from (set by the player only while playback analytics runs): lets the shop credit the order to the video. */
+	function sourceHeader( line ) {
+		var s = line.source;
+		if ( ! s || ! s.projectId ) {
+			return null;
+		}
+		return {
+			'X-SceneFlow-Source': s.projectId + ':' + ( s.sessionId || '' ),
+		};
 	}
 
 	/* Cached pages can carry a stale nonce: fetch the cart once to get a fresh one before mutating. */
@@ -125,13 +135,17 @@
 		}
 		return prime()
 			.then( function () {
-				return store( '/cart/add-item', {
-					method: 'POST',
-					body: JSON.stringify( {
-						id: id,
-						quantity: line.quantity || 1,
-					} ),
-				} );
+				return store(
+					'/cart/add-item',
+					{
+						method: 'POST',
+						body: JSON.stringify( {
+							id: id,
+							quantity: line.quantity || 1,
+						} ),
+					},
+					sourceHeader( line )
+				);
 			} )
 			.then( function ( res ) {
 				if ( ! res.ok ) {

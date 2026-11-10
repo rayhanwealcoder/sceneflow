@@ -11,6 +11,12 @@ import type { Product, ProductRef } from "@sceneflow/schema";
 export interface CartLine {
   product: ProductRef;
   quantity: number;
+  /**
+   * Which published video (and anonymous playback session) the click came from. Only set while playback
+   * analytics runs (site opted in, no Do Not Track / GPC); adapters may pass it to the shop so an order can be
+   * credited to the video ("revenue from this video" on the Analytics page).
+   */
+  source?: { projectId: string; sessionId: string };
 }
 
 export interface CommerceResult {

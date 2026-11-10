@@ -1,6 +1,6 @@
 import { parseProject, type Project } from "@sceneflow/schema";
 import { describe, expect, it } from "vitest";
-import { audioFilterGraph, audioPlan, bestSource, exportConfig, exportDimensions, exportDuration, exportFileName, exportOptionsFor, exportSpeed, projectDuration, resolveExportDevice, tempoFilters } from "./plan.js";
+import { audioFilterGraph, audioPlan, bestSource, exportConfig, exportDimensions, exportDuration, exportFileName, exportLimitError, exportOptionsFor, exportSpeed, projectDuration, resolveExportDevice, tempoFilters, useOriginalSource, videoAssetIds } from "./plan.js";
 
 function project(extra: Record<string, unknown>): Project {
   const r = parseProject({ schemaVersion: "1.0", projectId: "p", version: 1, scenes: [], ...extra });
@@ -29,7 +29,7 @@ describe("export plan", () => {
     expect(resolveExportDevice("16:9", "auto")).toBe("desktop");
     expect(resolveExportDevice("9:16", "desktop")).toBe("desktop");
     const p = project({ canvas: { aspectRatio: "9:16" } });
-    expect(exportOptionsFor(p, { quality: "720p", fps: 25, device: "auto" })).toEqual({ quality: "720p", width: 720, height: 1280, fps: 25, device: "mobile" });
+    expect(exportOptionsFor(p, { quality: "720p", fps: 25, device: "auto" })).toEqual({ quality: "720p", width: 720, height: 1280, fps: 25, device: "mobile", format: "mp4", transparent: false });
   });
 
   it("prefers the largest progressive rendition and never a scrub file", () => {
@@ -135,5 +135,45 @@ describe("export plan", () => {
   it("names the file after the project, ASCII only", () => {
     expect(exportFileName("Spring Launch — Été 2026!", "1080p")).toBe("spring-launch-ete-2026-1080p.mp4");
     expect(exportFileName("বসন্ত", "720p")).toBe("video-720p.mp4");
+  });
+});
+
+describe("export formats, 4K and originals (Phase 16)", () => {
+  it("sizes 4K and 480p frames, freezes the format, GIFs at 15 fps, alpha only for a transparent WebM", () => {
+    expect(exportDimensions("16:9", "2160p")).toEqual({ width: 3840, height: 2160 });
+    expect(exportDimensions("9:16", "480p")).toEqual({ width: 480, height: 854 });
+    const clear = project({ canvas: { aspectRatio: "16:9", background: "transparent" } });
+    expect(exportOptionsFor(clear, { quality: "720p", fps: 30, device: "auto", format: "webm" })).toMatchObject({ format: "webm", transparent: true, fps: 30 });
+    expect(exportOptionsFor(clear, { quality: "720p", fps: 30, device: "auto", format: "mp4" })).toMatchObject({ format: "mp4", transparent: false });
+    expect(exportOptionsFor(clear, { quality: "480p", fps: 60, device: "auto", format: "gif" })).toMatchObject({ format: "gif", fps: 15, width: 854, height: 480 });
+    expect(exportFileName("Spring Launch", "720p", "gif")).toBe("spring-launch-720p.gif");
+    expect(exportFileName("Spring Launch", "2160p")).toBe("spring-launch-2160p.mp4");
+  });
+
+  it("limits: GIFs up to 720p and 30 s, 4K up to 3 minutes", () => {
+    expect(exportLimitError({ quality: "1080p", format: "gif" }, 10)).toMatch(/720p/);
+    expect(exportLimitError({ quality: "720p", format: "gif" }, 31)).toMatch(/30 seconds/);
+    expect(exportLimitError({ quality: "480p", format: "gif" }, 30)).toBeNull();
+    expect(exportLimitError({ quality: "2160p", format: "mp4" }, 181)).toMatch(/4K/);
+    expect(exportLimitError({ quality: "2160p", format: "webm" }, 120)).toBeNull();
+    expect(exportLimitError({ quality: "1080p" }, 600)).toBeNull();
+  });
+
+  it("plays the original upload when Chrome decodes it and it is at most twice the frame", () => {
+    const frame = { width: 1920, height: 1080 };
+    expect(useOriginalSource({ codec: "h264", width: 3840, height: 2160 }, frame)).toBe(true);
+    expect(useOriginalSource({ codec: "h264", width: 3840, height: 2160 }, { width: 1280, height: 720 })).toBe(false);
+    expect(useOriginalSource({ codec: "hevc", width: 1920, height: 1080 }, frame)).toBe(false);
+    expect(useOriginalSource({ codec: "prores", width: 1920, height: 1080 }, frame)).toBe(false);
+    expect(useOriginalSource({ codec: "vp9" }, frame)).toBe(false);
+    const p = project({
+      video: { provider: "local", assetId: "base1", src: "https://cdn.test/proxy.mp4", duration: 4, sources: [{ src: "https://cdn.test/1080.mp4", type: "video/mp4", height: 1080 }] },
+      scenes: [{ id: "a", name: "A", start: 0, end: 4, background: { type: "video", assetId: "bg1", src: "https://cdn.test/bg-proxy.mp4", sourceStart: 0 } }],
+    });
+    expect(videoAssetIds(p).sort()).toEqual(["base1", "bg1"]);
+    const withOriginal = exportConfig(p, { base1: "https://render.local/original/base1" });
+    expect(withOriginal.video!.src).toBe("https://render.local/original/base1");
+    expect(withOriginal.scenes[0]!.background).toMatchObject({ src: "https://cdn.test/bg-proxy.mp4" });
+    expect(exportConfig(p).video!.src).toBe("https://cdn.test/1080.mp4");
   });
 });

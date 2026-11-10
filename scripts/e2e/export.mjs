@@ -143,21 +143,50 @@ if (diff(f1.px, f2.px) < 3) fail("video does not change between 0.4 s and 3.6 s"
 if (f1.max < 200) fail("no bright pixels at 0.4 s (text / caption missing?)");
 step(`file checks: ${p.width}x${p.height} ${p.codec}, ${p.duration.toFixed(2)}s, audio ${p.hasAudio}, frames differ (Δ ${diff(f1.px, f2.px).toFixed(1)})`);
 
+// ---- WebM and GIF from the same card ----
+async function renderAs(format, quality) {
+  await page.selectOption("[data-testid=export-format]", format);
+  await page.selectOption("[data-testid=export-quality]", quality);
+  const before = await page.locator("[data-testid=export-item]").count();
+  await page.click("[data-testid=export-start]");
+  await page.waitForFunction((n) => document.querySelectorAll("[data-testid=export-item]").length > n, before, { timeout: 15000 });
+  const t0 = Date.now();
+  for (;;) {
+    const st = await page.locator("[data-testid=export-item]").first().getAttribute("data-status");
+    if (st === "ready") break;
+    if (st === "failed") fail(`${format} export failed: ` + (await page.locator("[data-testid=export-item]").first().innerText()).replace(/\s+/g, " ").slice(0, 300));
+    if (Date.now() - t0 > 240_000) fail(`${format} export not ready after 4 minutes`);
+    await sleep(1500);
+  }
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 30000 }), page.locator("[data-testid=export-download]").first().click()]);
+  const file = join(outDir, `export-e2e.${format}`);
+  await dl.saveAs(file);
+  return { file, name: dl.suggestedFilename(), probe: await probe(file), seconds: Math.round((Date.now() - t0) / 1000) };
+}
+const webm = await renderAs("webm", "480p");
+if (webm.name !== "export-e2e-480p.webm" || webm.probe.codec !== "vp9" || webm.probe.width !== 854 || !webm.probe.hasAudio) fail("WebM unexpected: " + JSON.stringify({ name: webm.name, ...webm.probe }));
+step(`WebM: ${webm.name} ${webm.probe.width}x${webm.probe.height} ${webm.probe.codec} with audio, ${webm.seconds}s`);
+const gif = await renderAs("gif", "480p");
+if (gif.name !== "export-e2e-480p.gif" || gif.probe.codec !== "gif" || gif.probe.hasAudio) fail("GIF unexpected: " + JSON.stringify({ name: gif.name, ...gif.probe }));
+if ((await page.isDisabled("[data-testid=export-fps]")) !== true) fail("frame rate should be fixed for GIFs");
+step(`GIF: ${gif.name} ${gif.probe.width}x${gif.probe.height}, silent, ${gif.seconds}s`);
+
 // ---- around it: editor menu link, dashboard feed, delete ----
 await page.goto(`${WEB}/projects/${project.id}/editor`);
 await page.waitForSelector(".ed-canvas", { timeout: 20000 });
 if (await page.$(".tour-card")) await page.click(".tour-card >> text=Skip tour");
 await page.click(".ed-menu summary");
 await page.waitForSelector("[data-testid=export-link]");
-step("editor ⋯ menu offers “Download as MP4…”");
+step("editor ⋯ menu offers “Download as video…”");
 const dash = await api("GET", `/api/v1/workspaces/${workspaceId}/dashboard`);
 const ex = dash.activity.find((a) => a.type === "exported");
-if (!ex || ex.actorName !== "Export Tester" || ex.detail !== "v1 720p") fail("dashboard feed lacks the export: " + JSON.stringify(dash.activity.map((a) => a.type)));
+if (!dash.activity.some((a) => a.type === "exported" && a.detail === "v1 480p GIF")) fail("dashboard feed lacks the GIF export");
+if (!ex || ex.actorName !== "Export Tester" || !/^v1 (720p|480p)/.test(ex.detail)) fail("dashboard feed lacks the export: " + JSON.stringify(dash.activity.map((a) => a.type)));
 step("dashboard activity lists the export");
 const { exports } = await api("GET", `/api/v1/projects/${project.id}/exports`);
-await api("DELETE", `/api/v1/exports/${exports[0].id}`);
+for (const e of exports) await api("DELETE", `/api/v1/exports/${e.id}`);
 if ((await api("GET", `/api/v1/projects/${project.id}/exports`)).exports.length !== 0) fail("export not deleted");
-step("deleted the export");
+step(`deleted the ${exports.length} exports`);
 
 await browser.close();
 await rm(tmp, { recursive: true, force: true });

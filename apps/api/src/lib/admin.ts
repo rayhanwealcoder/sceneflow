@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { adminAudit, type ADMIN_TARGETS } from "@sceneflow/server";
 import type { SQL } from "drizzle-orm";
@@ -48,4 +49,21 @@ export function csvCell(value: unknown): string {
 export function likePattern(q: unknown): string | null {
   const s = typeof q === "string" ? q.trim().slice(0, 100) : "";
   return s ? `%${s.replace(/[\%_]/g, (c) => `\${c}`)}%` : null;
+}
+
+/** No 0/O, 1/l/I: the admin may read the password out over the phone. */
+const READABLE = "abcdefghjkmnpqrstuvwxyz23456789";
+
+/**
+ * A temporary password like `k7mq-4xrt-p9zh` (12 random characters from 31, about 59 bits): strong enough
+ * for the single sign-in it is good for, easy to dictate. Rejection sampling keeps every character equally likely.
+ */
+export function temporaryPassword(groups = 3, size = 4): string {
+  const out: string[] = [];
+  while (out.length < groups * size) {
+    for (const b of randomBytes(32)) {
+      if (b < 248 && out.length < groups * size) out.push(READABLE[b % READABLE.length]!);
+    }
+  }
+  return Array.from({ length: groups }, (_, i) => out.slice(i * size, (i + 1) * size).join("")).join("-");
 }

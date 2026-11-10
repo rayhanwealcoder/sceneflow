@@ -1,9 +1,11 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { analyticsBatchSchema, type Project as ProjectConfig } from "@sceneflow/schema";
-import { analyticsEvents, projects, projectVersions } from "@sceneflow/server";
+import { analyticsEvents, projects, projectVersions, shopOrders } from "@sceneflow/server";
 import { HttpError, type Ctx } from "../context.js";
+import { csvCell } from "../lib/admin.js";
 import { requireMember, requireUser } from "../lib/auth.js";
+import { projectRevenue, syncWorkspaceOrders } from "../lib/orders.js";
 import { assertUuid } from "../lib/validate.js";
 
 /*
@@ -13,6 +15,11 @@ import { assertUuid } from "../lib/validate.js";
  */
 
 const TIMELINE_BUCKETS = 50;
+/** The Analytics page waits this long for fresh shop orders, then shows what is stored (the pull finishes anyway). */
+const ORDER_SYNC_WAIT_MS = 4000;
+/** Raw-event CSV cap. */
+const CSV_EVENT_LIMIT = 100_000;
+const pickDays = (v: unknown) => ([7, 30, 90, 365].includes(Number(v)) ? Number(v) : 7);
 const PROJECT_CACHE_MS = 60_000;
 
 export async function analyticsRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx }) {
@@ -73,7 +80,9 @@ export async function analyticsRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx 
     const project = await ctx.db.query.projects.findFirst({ where: eq(projects.id, id) });
     if (!project) throw new HttpError(404, "PROJECT_NOT_FOUND", "Project not found");
     await requireMember(ctx, user.id, project.workspaceId);
-    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const days = pickDays(req.query.days);
+    // Fresh shop orders first (bounded wait): "revenue from this video" (doc 24.2).
+    await Promise.race([syncWorkspaceOrders(ctx, project.workspaceId).catch(() => undefined), new Promise((r) => setTimeout(r, ORDER_SYNC_WAIT_MS))]);
     const from = new Date(Date.now() - days * 86_400_000);
     const scope = and(eq(analyticsEvents.projectId, id), gte(analyticsEvents.occurredAt, from));
 
@@ -171,7 +180,34 @@ export async function analyticsRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx 
       .from(analyticsEvents)
       .where(and(scope, sql`${analyticsEvents.productId} is not null`))
       .groupBy(analyticsEvents.productId);
-    const products = productRows.filter((r) => r.productId).map((r) => ({ productId: r.productId!, title: productNames.get(r.productId!) ?? r.productId!, views: r.views, addToCarts: r.addToCarts, checkouts: r.checkouts })).sort((a, b) => b.addToCarts - a.addToCarts || b.views - a.views);
+    const orderRows = await ctx.db
+      .select({
+        productId: shopOrders.productId,
+        orders: sql<number>`count(distinct (${shopOrders.siteId}, ${shopOrders.orderId}))`.mapWith(Number),
+        units: sql<number>`coalesce(sum(${shopOrders.quantity}), 0)`.mapWith(Number),
+        revenue: sql<number>`coalesce(sum(${shopOrders.revenue}), 0)`.mapWith(Number),
+      })
+      .from(shopOrders)
+      .where(and(eq(shopOrders.projectId, id), eq(shopOrders.status, "paid"), gte(shopOrders.paidAt, from)))
+      .groupBy(shopOrders.productId);
+    const sold = new Map(orderRows.map((r) => [r.productId ?? "", r]));
+    const productIds = new Set([...productRows.map((r) => r.productId ?? ""), ...orderRows.map((r) => r.productId ?? "")].filter(Boolean));
+    const byId = new Map(productRows.map((r) => [r.productId ?? "", r]));
+    const products = [...productIds]
+      .map((pid) => {
+        const ev = byId.get(pid);
+        const o = sold.get(pid);
+        return { productId: pid, title: productNames.get(pid) ?? pid, views: ev?.views ?? 0, addToCarts: ev?.addToCarts ?? 0, checkouts: ev?.checkouts ?? 0, orders: o?.orders ?? 0, units: o?.units ?? 0, revenue: Math.round((o?.revenue ?? 0) * 100) / 100 };
+      })
+      .sort((a, b) => b.revenue - a.revenue || b.addToCarts - a.addToCarts || b.views - a.views);
+    const revenue = (await projectRevenue(ctx, id, from)).map((r) => ({ currency: r.currency, orders: r.orders, items: r.items, revenue: Math.round(r.revenue * 100) / 100 })).sort((a, b) => b.revenue - a.revenue);
+    const orders = revenue.reduce((n, r) => n + r.orders, 0);
+    const dailyOrders = await ctx.db
+      .select({ day: sql<string>`to_char(date_trunc('day', ${shopOrders.paidAt}), 'YYYY-MM-DD')`, orders: sql<number>`count(distinct (${shopOrders.siteId}, ${shopOrders.orderId}))`.mapWith(Number) })
+      .from(shopOrders)
+      .where(and(eq(shopOrders.projectId, id), eq(shopOrders.status, "paid"), gte(shopOrders.paidAt, from)))
+      .groupBy(sql`1`);
+    const ordersByDay = new Map(dailyOrders.map((d) => [d.day, d.orders]));
 
     const deviceRows = await ctx.db
       .select({ device: analyticsEvents.device, sessions: sql<number>`count(distinct ${analyticsEvents.sessionId})`.mapWith(Number) })
@@ -207,8 +243,14 @@ export async function analyticsRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx 
         checkouts: c.checkouts,
         coupons: c.coupons,
         errors: c.errors,
+        orders,
+        /** Per currency: a shop can sell in several. */
+        revenue,
+        /** Orders per 100 viewers who pressed play. */
+        conversionRate: c.plays ? Math.round((orders / c.plays) * 1000) / 10 : null,
       },
-      daily,
+      // Days with orders but no player events (a visitor bought later) still get a row.
+      daily: [...daily.map((d) => ({ ...d, orders: ordersByDay.get(d.day) ?? 0 })), ...[...ordersByDay].filter(([day]) => !daily.some((d) => d.day === day)).map(([day, orders]) => ({ day, loads: 0, plays: 0, completes: 0, clicks: 0, orders }))].sort((x, y) => x.day.localeCompare(y.day)),
       timeline: { buckets: TIMELINE_BUCKETS, duration, values: timeline },
       scenes,
       elements,
@@ -216,5 +258,74 @@ export async function analyticsRoutes(app: FastifyInstance, { ctx }: { ctx: Ctx 
       devices,
       pages: pageRows.map((r) => ({ host: r.host ?? "", path: r.path ?? "", loads: r.loads })),
     };
+  });
+
+  /**
+   * The project's numbers as CSV for spreadsheets: `view=daily` (one row per day: loads, plays, completions,
+   * clicks, carts, orders, revenue) or `view=events` (raw anonymous events, newest first, capped). Same access
+   * as the Analytics page; cells that a spreadsheet would run as formulas are neutralised.
+   */
+  app.get<{ Params: { id: string }; Querystring: { days?: string; view?: string } }>("/api/v1/projects/:id/analytics.csv", async (req, reply) => {
+    const user = await requireUser(ctx, req);
+    const id = assertUuid(req.params.id, "project id");
+    const project = await ctx.db.query.projects.findFirst({ where: eq(projects.id, id) });
+    if (!project) throw new HttpError(404, "PROJECT_NOT_FOUND", "Project not found");
+    await requireMember(ctx, user.id, project.workspaceId);
+    const days = pickDays(req.query.days);
+    const view = req.query.view === "events" ? "events" : "daily";
+    const from = new Date(Date.now() - days * 86_400_000);
+    const scope = and(eq(analyticsEvents.projectId, id), gte(analyticsEvents.occurredAt, from));
+    let header: string[];
+    let lines: unknown[][];
+    if (view === "daily") {
+      const daily = await ctx.db
+        .select({
+          day: sql<string>`to_char(date_trunc('day', ${analyticsEvents.occurredAt}), 'YYYY-MM-DD')`,
+          loads: sql<number>`count(*) filter (where ${analyticsEvents.type} = 'player_loaded')`.mapWith(Number),
+          viewers: sql<number>`count(distinct ${analyticsEvents.sessionId})`.mapWith(Number),
+          plays: sql<number>`count(distinct ${analyticsEvents.sessionId}) filter (where ${analyticsEvents.type} = 'video_play')`.mapWith(Number),
+          completes: sql<number>`count(distinct ${analyticsEvents.sessionId}) filter (where ${analyticsEvents.type} = 'video_complete')`.mapWith(Number),
+          clicks: sql<number>`count(*) filter (where ${analyticsEvents.type} in ('element_click','hotspot_click'))`.mapWith(Number),
+          carts: sql<number>`count(*) filter (where ${analyticsEvents.type} = 'add_to_cart')`.mapWith(Number),
+          checkouts: sql<number>`count(*) filter (where ${analyticsEvents.type} = 'checkout_started')`.mapWith(Number),
+        })
+        .from(analyticsEvents)
+        .where(scope)
+        .groupBy(sql`1`);
+      const sales = await ctx.db
+        .select({
+          day: sql<string>`to_char(date_trunc('day', ${shopOrders.paidAt}), 'YYYY-MM-DD')`,
+          currency: shopOrders.currency,
+          orders: sql<number>`count(distinct (${shopOrders.siteId}, ${shopOrders.orderId}))`.mapWith(Number),
+          revenue: sql<number>`coalesce(sum(${shopOrders.revenue}), 0)`.mapWith(Number),
+        })
+        .from(shopOrders)
+        .where(and(eq(shopOrders.projectId, id), eq(shopOrders.status, "paid"), gte(shopOrders.paidAt, from)))
+        .groupBy(sql`1`, shopOrders.currency);
+      const dayKeys = [...new Set([...daily.map((d) => d.day), ...sales.map((d) => d.day)])].sort();
+      const ev = new Map(daily.map((d) => [d.day, d]));
+      header = ["date", "player_loads", "viewers", "plays", "completions", "clicks", "add_to_cart", "checkouts", "orders", "revenue", "currency"];
+      lines = [];
+      for (const day of dayKeys) {
+        const e = ev.get(day);
+        const base = [day, e?.loads ?? 0, e?.viewers ?? 0, e?.plays ?? 0, e?.completes ?? 0, e?.clicks ?? 0, e?.carts ?? 0, e?.checkouts ?? 0];
+        const daySales = sales.filter((x) => x.day === day);
+        if (daySales.length === 0) lines.push([...base, 0, 0, ""]);
+        for (const x of daySales) lines.push([...base, x.orders, Math.round(x.revenue * 100) / 100, x.currency]);
+      }
+    } else {
+      const rowsOut = await ctx.db
+        .select({ at: analyticsEvents.occurredAt, type: analyticsEvents.type, session: analyticsEvents.sessionId, version: analyticsEvents.version, t: analyticsEvents.t, scene: analyticsEvents.sceneId, layer: analyticsEvents.layerId, product: analyticsEvents.productId, device: analyticsEvents.device, host: analyticsEvents.host, path: analyticsEvents.path, payload: analyticsEvents.payloadJson })
+        .from(analyticsEvents)
+        .where(scope)
+        .orderBy(sql`${analyticsEvents.occurredAt} desc`)
+        .limit(CSV_EVENT_LIMIT);
+      header = ["time", "event", "session", "version", "video_time", "scene", "element", "product", "device", "host", "path", "details"];
+      lines = rowsOut.map((e) => [e.at, e.type, e.session, e.version, e.t, e.scene, e.layer, e.product, e.device, e.host, e.path, Object.keys(e.payload ?? {}).length ? JSON.stringify(e.payload) : ""]);
+    }
+    const safeName = project.name.replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "project";
+    reply.header("content-type", "text/csv; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="${safeName}-${view}-${days}d-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return "\ufeff" + [header.join(","), ...lines.map((l) => l.map(csvCell).join(","))].join("\r\n") + "\r\n";
   });
 }

@@ -24,6 +24,8 @@ const envSchema = z
     ELEVENLABS_API_KEY: z.string().optional(),
     ELEVENLABS_VOICE_ID: z.string().optional(),
     AI_SPEECH_PROVIDER: z.enum(["auto", "elevenlabs", "system", "off"]).optional(),
+    /** Playback analytics events older than this many days are deleted (0 = keep forever). 395 = 13 months, so a year can be compared with the one before. */
+    ANALYTICS_RETENTION_DAYS: z.coerce.number().int().min(0).max(3650).default(395),
   })
   .merge(storageEnvSchema)
   .merge(mailEnvSchema);
@@ -48,6 +50,8 @@ export interface AppConfig {
   ai: AiEnv;
   /** Outgoing e-mail: Resend, SMTP, or the outbox folder when neither is configured (see packages/server/src/mail). */
   mail: MailConfig;
+  /** Days of raw playback analytics to keep; 0 = forever. Sales (shop orders) are kept. */
+  analyticsRetentionDays: number;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig & { port: number } {
@@ -68,6 +72,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig &
     wpPluginDistDir: resolve(process.cwd(), e.WP_PLUGIN_DIST_DIR),
     ai: { ANTHROPIC_API_KEY: e.ANTHROPIC_API_KEY, AI_MODEL: e.AI_MODEL, AI_TEXT_PROVIDER: e.AI_TEXT_PROVIDER, ELEVENLABS_API_KEY: e.ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID: e.ELEVENLABS_VOICE_ID, AI_SPEECH_PROVIDER: e.AI_SPEECH_PROVIDER },
     mail: mailConfigFromEnv(e, { defaultOutboxDir: resolve(process.cwd(), e.STORAGE_DIR, "outbox"), resolveDir: (d) => resolve(process.cwd(), d) }),
+    analyticsRetentionDays: e.ANALYTICS_RETENTION_DAYS,
   };
 }
 
@@ -89,6 +94,8 @@ export function testConfig(storageDir: string, overrides: Partial<AppConfig> = {
     rateLimits: false,
     ai: { AI_TEXT_PROVIDER: "starter", AI_SPEECH_PROVIDER: "off" },
     mail: { provider: "log", from: "SceneFlow <test@localhost>", outboxDir: join(storageDir, "outbox") },
+    // Tests share one database: never delete other tests' events in the background.
+    analyticsRetentionDays: 0,
     ...overrides,
   };
 }
